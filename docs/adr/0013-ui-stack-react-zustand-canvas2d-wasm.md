@@ -1,7 +1,7 @@
 # ADR-0013: UI stack: React + Zustand + imperative Canvas2D + WASM kernel
 Status: Proposed · Date: 2026-09-29
 
-Source: [implementation plan](../implementation-plan.md) §3.4, §4.2, §4.3, §5.2, §7.1, §7.2, §7.3, §8.1, §10.4, §12.1, §12.2, §15 (R3); [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) Invariants, Steps 2 and 8.
+Source: [implementation plan](../implementation-plan.md) §3.4, §4.2, §4.3, §5.2, §5.4, §7.1, §7.2, §7.3, §8.1, §10.4, §12.1, §12.2, §15 (R3); [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) Invariants, Steps 2 and 8.
 
 ## Context
 
@@ -22,7 +22,7 @@ Source: [implementation plan](../implementation-plan.md) §3.4, §4.2, §4.3, §
   - A gesture ends in one committed command.
   - `Path2D` objects are cached by glyph id and revision.
   - Redraws are coalesced into one `requestAnimationFrame` per frame and triggered by events, never by a constant loop.
-- **WASM kernel** (§5.2): `tf-geometry` (and `tf-interp`) compiled to `wasm32-unknown-unknown` through the `tf-wasm` facade. Calls are coarse-grained, on typed arrays (`hitTest`, `snap`, `constrainSmooth`, `fitStroke`, `interpolate`). Size budget: under 350 KB gzipped.
+- **WASM kernel** (§5.2, §5.4): `tf-geometry`, plus `tf-interp` for the designspace sliders, compiled to `wasm32-unknown-unknown` through the `tf-wasm` facade. Calls are coarse-grained, on typed arrays (`hitTest`, `snap`, `constrainSmooth`, `fitStroke`, `interpolate`). Size budget: under 350 KB gzipped.
 - **Dragging runs locally** in the webview on the WASM kernel. Only the final result is committed through IPC (§7.2, §8.1, Step 8).
 - **Styling** uses CSS files bundled by Vite, not CSS-in-JS libraries that inject `<style>` tags. If inline styles are ever needed, `style-src 'self' 'unsafe-inline'` is added deliberately and noted in this ADR (Step 2).
 - **The CSP's `script-src` includes `'wasm-unsafe-eval'`** for the WASM kernel (Step 8).
