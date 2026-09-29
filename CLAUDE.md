@@ -24,4 +24,16 @@ Proprietary desktop font editor: Tauri 2 shell, Rust engine, React UI. All right
   asks; never push to a public remote without the user's go-ahead.
 
 ## Commands
-(added in Step 2)
+Toolchains are pinned: Rust in `rust-toolchain.toml`, Node in `.nvmrc`, pnpm in `package.json`.
+Build the frontend before any cargo command: the desktop crate embeds `apps/desktop/dist`.
+
+| Task | Command |
+|---|---|
+| Install | `pnpm install --frozen-lockfile` |
+| Dev (app with hot reload) | `pnpm --filter @typefaced/desktop tauri dev` |
+| Build the frontend | `pnpm --filter @typefaced/desktop build` |
+| Build the app (debug, no installer) | `pnpm --filter @typefaced/desktop tauri build --debug --no-bundle` |
+| Test | `cargo test --workspace` · `pnpm test` |
+| Lint | `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `pnpm lint` (fix: `pnpm exec biome check --write .`) |
+| Typecheck | `pnpm typecheck` |
+| Regenerate the TypeScript bindings | `cargo test -p typefaced-desktop export_bindings`, then commit `packages/bindings/src/index.ts` |

@@ -1,0 +1,24 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  color: #1f2328;
+  background-color: #f6f8fa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #e6edf3;
+    background-color: #0d1117;
+  }
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  display: grid;
+  place-content: center;
+  min-height: 100vh;
+  text-align: center;
+}
