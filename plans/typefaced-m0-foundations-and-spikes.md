@@ -34,7 +34,7 @@ After that, M1 (headless engine) can start.
 | Step | Title | Depends on | Tier | Effort | Status |
 |---|---|---|---|---|---|
 | 1 | Repository bootstrap | — | default | 1 h | DONE (bootstrap commit on `main`) |
-| 2 | Walking skeleton: workspaces, Tauri shell, typed IPC | 1 | default | 1 d | TODO |
+| 2 | Walking skeleton: workspaces, Tauri shell, typed IPC | 1 | default | 1 d | DONE (#2) |
 | 3.1 | Local gates: xtask, cargo-deny, coverage | 2 | default | 0.5 d | TODO |
 | 3.2 | CI workflows | 3.1 | default | 0.5 d | TODO |
 | 4 | Architecture decision records | 1 | default | 0.5 d | TODO |
