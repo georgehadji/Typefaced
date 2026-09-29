@@ -1620,6 +1620,8 @@ gantt
 | 018 | Hinting: ttfautohint sidecar for TTF only in 1.0 |
 | 019 | Clean-room spacing algorithm from the published method |
 
+The ADRs themselves live in [docs/adr/](adr/README.md).
+
 ---
 
 ## 17. Open questions (need your decision)

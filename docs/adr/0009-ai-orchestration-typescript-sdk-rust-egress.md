@@ -1,0 +1,68 @@
+# ADR-0009: AI orchestration in TypeScript on the official SDK; Rust egress proxy + keychain
+Status: Proposed · Date: 2026-09-29
+
+Source: [implementation plan](../implementation-plan.md) §1 (D3), §3.4, §5.10, §6.2, §6.10, §11.1, §13.1; [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) deviation 9, Steps 9.1 and 9.2.
+
+## Context
+
+- AI ships in 1.0 (D3). The agent needs a tool runner, streaming and context-management helpers (§3.4).
+- An official Anthropic SDK exists for TypeScript, but not for Rust (§3.4).
+- The UI runs in a webview. An XSS bug there must not be able to leak the API key (§6.2, §11.1).
+
+## Decision
+
+- **The agent runs in the webview** (`@typefaced/ai`) on the official `@anthropic-ai/sdk` tool runner (`client.beta.messages.toolRunner`; §6.2).
+  - Tools are built from the command registry's JSON Schemas with `betaTool()` ([ADR-0004](0004-commands-as-single-api.md)).
+  - `betaTool()` does not validate at runtime, so every tool's `run` function validates its input with Ajv against the same schema before dispatching it.
+  - Approval gates live inside `run`. Tools with side-effect class E or D ask the user, and return a "user declined" result when refused.
+- **The SDK's HTTP traffic goes through a Rust egress proxy** (§6.2). A custom `fetch` forwards each request over Tauri IPC to `tf-ai-host`, which:
+  - forwards only to allowlisted hosts: `api.anthropic.com`, and later the Typefaced gateway (§6.2). In M0 that means only `https://api.anthropic.com` with path prefix `/v1/`, and only the methods POST and GET (Step 9.1);
+  - strips incoming `x-api-key`, `authorization` and `cookie` headers, and injects `x-api-key` from the OS keychain (Step 9.1);
+  - streams the response back over a Tauri channel;
+  - records usage in the budget ledger, writes the audit log, and enforces per-project AI permissions and a kill switch (§6.2);
+  - never logs headers or bodies (Step 9.1).
+- **The key lives only in the OS keychain** (Windows Credential Manager, through `keyring`), behind the `CredentialVault` port (§5.10). No command returns the key (Step 9.1).
+- **`@tauri-apps/plugin-http` is not used:** it would need the key in JavaScript (Step 9.1).
+- **An `LlmClient` port** (§6.2): Anthropic direct, with the user's own key, in 1.0. A Typefaced Cloud gateway, if it is built, changes only the `baseURL` and the credential (§6.10).
+- **SDK option names are never guessed.** The exact option for the custom `fetch` is confirmed in Spike 4 (§6.2, §13.1).
+
+### Key entry: a deliberate exception (deviation 9)
+
+- §6.2 says the key never exists in the webview, so an XSS bug cannot leak it.
+- In M0 the user types the key into a password field in the webview. It crosses IPC once, to `ai_set_key`, to be stored.
+- The field is cleared right away. The key is never persisted, logged or readable back from JavaScript.
+- **The cost:** while the key is being typed and sent, script running in the webview could read it. The webview XSS controls (strict CSP, no remote content, sanitised markdown, minimal Tauri capabilities; §11.1) lower this risk but do not remove it.
+- **M3 evaluates a native OS credential prompt** instead, which would keep the key out of the webview entirely.
+
+## Consequences
+
+- The SDK absorbs API changes and provides the tool runner, streaming and context-management helpers (§3.4).
+- After entry, script in the webview cannot get the key back: no command returns it.
+- Streaming crosses IPC. The JavaScript `fetch` resolves as soon as the response head arrives; the body follows in chunks (Step 9.1).
+- The SDK will probably need `dangerouslyAllowBrowser: true` and a placeholder `apiKey`, such as `"injected-by-rust"`. That is acceptable only because Rust adds the real key (Step 9.2).
+- The CSP is defence in depth. The real key control is the Rust proxy (Step 9.2).
+
+## Alternatives considered
+
+- **A Rust agent loop over raw HTTP.** Rejected: there is no official Rust SDK, and the TypeScript SDK absorbs API changes (§3.4). It is the fallback if the custom-fetch route cannot work, which needs the user's approval as an amendment to this ADR (Step 9.2).
+- **`@tauri-apps/plugin-http`.** Rejected: it would need the key in JavaScript (Step 9.1).
+
+## Validation
+
+**Validated by Step 9.1 — Spike 4a: AI egress host (Rust), and Step 9.2 — Spike 4b: AI client and tool runner (TypeScript).**
+
+Step 9.1 exit criteria:
+- The policy, streaming and abort tests pass.
+- The vault test passes on Windows and never touches the production entry.
+- No command returns the key.
+- The security review has no open CRITICAL or HIGH findings.
+
+Step 9.2 exit criteria (the ADR-0009 pass criteria):
+- Streaming responses arrive in pieces through the proxy.
+- The key is stored only in Credential Manager. It is never persisted, logged or readable back in JavaScript, and it is absent from the built bundle.
+- Non-allowlisted destinations are rejected (from Step 9.1).
+- Invalid tool input never runs.
+- The mutation tool needs approval.
+- The security review has no open CRITICAL or HIGH findings.
+
+Step 9.2 also runs a live smoke test (a GATE: the user enters the key and approves a rename) and a CSP check in a debug build. It then sets this ADR to Accepted or Rejected.
