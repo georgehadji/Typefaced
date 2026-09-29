@@ -1,0 +1,10 @@
+target/
+node_modules/
+dist/
+*.log
+.env
+.env.*
+**/.claude/claudex/
+.claude/settings.local.json
+Thumbs.db
+.DS_Store
