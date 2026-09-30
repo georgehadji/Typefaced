@@ -1,0 +1,27 @@
+[package]
+name = "spike-collections"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+license = "LicenseRef-Proprietary"
+publish = false
+description = "Spike 6 (ADR-017): persistent collections for document snapshots"
+
+# Own workspace root: stays out of the root workspace, its lockfile and product CI.
+[workspace]
+
+[dependencies]
+# MPL-2.0, used unmodified (Appendix B).
+imbl = "=7.0.2"
+
+[dev-dependencies]
+# Default features pull in rayon and plotters; the spike needs neither.
+criterion = { version = "=0.8.2", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "ops"
+harness = false
+
+[[bench]]
+name = "memory"
+harness = false
