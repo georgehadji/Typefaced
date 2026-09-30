@@ -37,7 +37,7 @@ export default defineConfig(() => ({
     // On in CI (GitHub sets CI=true); run locally with `pnpm test -- --coverage`.
     coverage: {
       enabled: process.env.CI === "true",
-      provider: "v8",
+      provider: "v8" as const,
       // Only this app's code: the generated bindings are another package.
       include: ["src/**/*.{ts,tsx}"],
       // The entry point only mounts <App /> into the page.
