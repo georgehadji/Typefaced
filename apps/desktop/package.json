@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage"
   },
   "dependencies": {
     "@typefaced/bindings": "workspace:*",

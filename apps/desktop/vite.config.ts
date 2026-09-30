@@ -1,12 +1,11 @@
-/// <reference types="vitest/config" />
 import process from "node:process";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(() => ({
+export default defineConfig({
   plugins: [react()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -34,15 +33,14 @@ export default defineConfig(() => ({
   // Vitest reads this file too, so tests always use the app's Vite settings.
   test: {
     environment: "jsdom",
-    // On in CI (GitHub sets CI=true); run locally with `pnpm test -- --coverage`.
+    // Used by `pnpm test:ci` (`vitest run --coverage`), which CI runs.
     coverage: {
-      enabled: process.env.CI === "true",
-      provider: "v8" as const,
+      provider: "v8",
       // Only this app's code: the generated bindings are another package.
       include: ["src/**/*.{ts,tsx}"],
       // The entry point only mounts <App /> into the page.
-      exclude: ["src/main.tsx", "src/**/*.test.{ts,tsx}"],
+      exclude: ["src/main.tsx", "src/**/*.test.{ts,tsx}", "src/**/*.d.ts"],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },
   },
-}));
+});

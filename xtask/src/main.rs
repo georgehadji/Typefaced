@@ -131,13 +131,8 @@ fn run_coverage() -> Result<(), String> {
         .collect::<Result<Vec<_>, String>>()?;
 
     let gates = coverage::gates(&covered);
-    // Only gated crates are built and tested, so the driver (Tauri, WebView) never is:
-    // this runs on Linux CI without WebKitGTK and without the frontend build.
-    let mut run = vec!["llvm-cov", "--locked", "--no-report"];
-    for name in gates.iter().flat_map(|gate| &gate.crates) {
-        run.extend(["--package", name]);
-    }
-    if gates.is_empty() {
+    let run = coverage::llvm_cov_args(&gates);
+    if run.is_empty() {
         println!("coverage: no gated crates yet");
         return Ok(());
     }
