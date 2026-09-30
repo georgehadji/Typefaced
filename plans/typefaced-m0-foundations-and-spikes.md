@@ -38,7 +38,7 @@ After that, M1 (headless engine) can start.
 | 3.1 | Local gates: xtask, cargo-deny, coverage | 2 | default | 0.5 d | DONE (#4) |
 | 3.2 | CI workflows | 3.1 | default | 0.5 d | DONE (#5) |
 | 4 | Architecture decision records | 1 | default | 0.5 d | DONE (#1) |
-| 5 | Test fixtures and pinned corpus | 3.1 | default | 0.5 d | TODO |
+| 5 | Test fixtures and pinned corpus | 3.1 | default | 0.5 d | DONE (#6) |
 | 6 | Spike 1 — fontc as an in-process library (ADR-006) | 4, 5 | default | 2 d | TODO |
 | 7 | Spike 2 — CFF writer and OTF transplant (ADR-007) | 6 | strongest | 3 d | TODO |
 | 8 | Spike 3 — IPC latency and WASM kernel (ADR-002, ADR-013) | 3.2, 4 | default | 2 d | TODO |

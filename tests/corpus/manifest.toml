@@ -1,0 +1,45 @@
+# Pinned font corpus. Nothing here is committed except this manifest:
+# `cargo xtask corpus fetch` downloads each entry into `.cache/<name>/` (git-ignored)
+# and `cargo xtask corpus verify` re-checks the cache.
+#
+# Fields:
+#   name     directory under .cache/ (lowercase letters, digits and '-')
+#   repo     GitHub `owner/name`
+#   commit   full 40-character commit SHA; the archive is
+#            https://codeload.github.com/<repo>/tar.gz/<commit>
+#   path     directory inside the repository; only it is extracted, and its
+#            contents land directly in .cache/<name>/
+#   license  SPDX expression, checked at the pinned commit; only OFL-1.1,
+#            Apache-2.0 and MIT are accepted (see SOURCES.md)
+#   digest   SHA-256 over the sorted lines "<relative path>\t<sha256 of file>\n"
+#            of the extracted files (paths relative to .cache/<name>/, '/'-separated).
+#            It covers the files, not the archive: GitHub keeps archive bytes
+#            stable only for a limited time.
+#   purpose  why the entry is here
+
+[[entry]]
+name = "fontc-testdata"
+repo = "googlefonts/fontc"
+commit = "e62f5818357f796f329f9bc1335c0e14a104ce09"
+path = "resources/testdata"
+license = "Apache-2.0 AND OFL-1.1"
+digest = "a60369fddf2f6b2d797c4295cea8e2585ae4f9eed22ad359bafcc0114249b629"
+purpose = "Small UFO, designspace, .glyphs and .fontra fixtures that exercise compiler edge cases (fontc 1.0.0 tag)"
+
+[[entry]]
+name = "inria-sans"
+repo = "BlackFoundryCom/InriaFonts"
+commit = "95a529cee87d8be884632644d3d37ad28512be28"
+path = "masters/INRIA-SANS"
+license = "OFL-1.1"
+digest = "fbee220905ea5ff5e0168d29aff023d1f8fd7e10545ee89ce657a8d54742cdd5"
+purpose = "Static UFO family: 6 styles of 591 glyphs each (UFO 2 and UFO 3), for timing and robustness"
+
+[[entry]]
+name = "source-sans-upright"
+repo = "adobe-fonts/source-sans"
+commit = "272b22b02e097e8eff1372111f88b5ab6063499f"
+path = "Upright"
+license = "OFL-1.1"
+digest = "20bc1110944f4d724a7cd50f6ffd058cb82b8a9afe7250c8bb3b6b07b2b2d4c5"
+purpose = "Variable designspace: 3 masters (2492, 235 sparse, 2496 glyphs) on a weight axis, plus 7 instance UFOs"

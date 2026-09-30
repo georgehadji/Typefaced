@@ -4398,9 +4398,12 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",
+ "serde",
  "serde_json",
+ "sha2",
  "spdx",
  "toml 1.1.6+spec-1.1.0",
+ "walkdir",
 ]
 
 [[package]]
