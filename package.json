@@ -5,7 +5,8 @@
   "scripts": {
     "lint": "biome check .",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "test:ci": "pnpm -r test:ci"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

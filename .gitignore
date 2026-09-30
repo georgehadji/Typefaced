@@ -10,3 +10,6 @@ Thumbs.db
 .DS_Store
 .claude/worktrees/
 *.tsbuildinfo
+
+# Vitest coverage reports
+coverage/

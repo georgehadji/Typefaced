@@ -112,12 +112,6 @@ fn run_coverage() -> Result<(), String> {
     let crates = workspace_crates(&metadata)?;
     report(&deps::violations(&crates))?;
     let root = &metadata.workspace_root;
-    if !root.join("apps/desktop/dist").is_dir() {
-        return Err(
-            "the desktop crate embeds apps/desktop/dist: run `pnpm --filter @typefaced/desktop build` first"
-                .into(),
-        );
-    }
     let covered = metadata
         .workspace_packages()
         .into_iter()
@@ -136,10 +130,16 @@ fn run_coverage() -> Result<(), String> {
         })
         .collect::<Result<Vec<_>, String>>()?;
 
+    let gates = coverage::gates(&covered);
+    let run = coverage::llvm_cov_args(&gates);
+    if run.is_empty() {
+        println!("coverage: no gated crates yet");
+        return Ok(());
+    }
     cargo(&["llvm-cov", "clean", "--workspace"])?;
-    cargo(&["llvm-cov", "--workspace", "--locked", "--no-report"])?;
+    cargo(&run)?;
     let mut failed = Vec::new();
-    for gate in coverage::gates(&covered) {
+    for gate in gates {
         println!(
             "\ncoverage gate {} (>= {}% lines): {}",
             gate.label,
