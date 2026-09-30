@@ -40,6 +40,3 @@ mod tests {
         assert_eq!(info.version, "2.3.4");
     }
 }
-
-// Deliberate CI failure check (Step 3.2); reverted in the next commit.
-pub  fn   ci_failure_check ( ) { }
