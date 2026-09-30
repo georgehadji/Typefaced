@@ -427,7 +427,7 @@ gh repo view georgehadji/Typefaced --json visibility,defaultBranchRef
    - Write a unit test of its JSON shape first.
    - No other logic.
 4. **`apps/desktop`.**
-   - In `apps/`, run `pnpm create tauri-app@latest --help` to check the current flags. Then create `desktop` with template `react-ts`, package manager `pnpm` and identifier `com.typefaced.app`. (Changing the identifier later moves the app-data folders; tell the user if they would prefer another domain.)
+   - In `apps/`, run `pnpm create tauri-app@latest --help` to check the current flags. Then create `desktop` with template `react-ts`, package manager `pnpm` and identifier `com.typefaced.desktop`. (Changing the identifier later moves the app-data folders; tell the user if they would prefer another domain.)
    - Rename:
      - npm package → `@typefaced/desktop`;
      - `tauri.conf.json` `productName` → `Typefaced`;
@@ -1057,8 +1057,8 @@ pnpm --filter @typefaced/desktop tauri dev --features bench     # open #/bench a
 1. **`crates/tf-ai-host`** (crate template; layer `adapter`).
    - **`CredentialVault`.**
      - Add the Windows store crate under `[target.'cfg(windows)'.dependencies]`, and set it as the default store at start-up.
-     - Production entry: service `com.typefaced.app`, account `anthropic-api-key`.
-     - **Tests never touch the production entry.** They use service `com.typefaced.app.test`, an account with a random suffix, and delete it on teardown. The round-trip test (write, re-open, read) is `#[cfg(windows)]`; Linux CI has no secret service.
+     - Production entry: service `com.typefaced.desktop`, account `anthropic-api-key`.
+     - **Tests never touch the production entry.** They use service `com.typefaced.desktop.test`, an account with a random suffix, and delete it on teardown. The round-trip test (write, re-open, read) is `#[cfg(windows)]`; Linux CI has no secret service.
    - **`EgressPolicy`:**
      - allow only `https://api.anthropic.com` with path prefix `/v1/`, and only the methods POST and GET;
      - strip any incoming `x-api-key`, `authorization` and `cookie` headers;
@@ -1361,3 +1361,4 @@ grep -l '^Status: Proposed' docs/adr/0*.md        # only ADRs of spikes marked S
 | 2026-09-29 | Plan created | `/ecc:blueprint` for milestone M0 | — |
 | 2026-09-29 | Revised after adversarial review: split Step 3 into 3.1/3.2 and Step 9 into 9.1/9.2; spikes moved to standalone workspaces; per-layer coverage (§12.2); CSP checks moved to debug builds; keyring 4.x guidance; test credentials isolated from the user's real key; CFF decomposition and name/SID rules; fixture code points and contour directions; content digests for the corpus; bash shell on Windows CI; Font Viewer instead of WordPad; no global rustup changes | Review verdict PASS WITH FIXES (0 critical, 5 high) | — |
 | 2026-09-29 | Step 1 gates answered: the repository stays public; LICENSE holder is Georgios-Chrysovalantis Chatzivantsidis; `main` gets a ruleset that requires pull requests | User decisions | User |
+| 2026-09-30 | App identifier changed from `com.typefaced.app` to `com.typefaced.desktop` (Step 2 text, keychain service names in Step 9.1) | Tauri warns that identifiers ending in `.app` clash with the macOS bundle extension | User |
