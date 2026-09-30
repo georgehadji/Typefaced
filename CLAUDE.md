@@ -25,6 +25,7 @@ Proprietary desktop font editor: Tauri 2 shell, Rust engine, React UI. All right
 
 ## Commands
 Toolchains are pinned: Rust in `rust-toolchain.toml`, Node in `.nvmrc`, pnpm in `package.json`.
+The gates also need `cargo install --locked cargo-deny cargo-llvm-cov`.
 Build the frontend before any cargo command: the desktop crate embeds `apps/desktop/dist`.
 
 | Task | Command |
@@ -37,3 +38,6 @@ Build the frontend before any cargo command: the desktop crate embeds `apps/desk
 | Lint | `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `pnpm lint` (fix: `pnpm exec biome check --write .`) |
 | Typecheck | `pnpm typecheck` |
 | Regenerate the TypeScript bindings | `cargo test -p typefaced-desktop export_bindings`, then commit `packages/bindings/src/index.ts` |
+| Layering and crate template | `cargo xtask check-deps` |
+| Licenses (Rust · npm) | `cargo deny check` · `cargo xtask licenses-npm` (one allow-list: `deny.toml`) |
+| Coverage gates (domain + application ≥ 90%, adapters ≥ 80%) | `cargo xtask coverage` |

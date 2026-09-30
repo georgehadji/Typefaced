@@ -1,0 +1,20 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Repository gates: layering, npm licenses and coverage (run with `cargo xtask`)"
+
+[package.metadata.typefaced]
+layer = "tool"
+
+[dependencies]
+cargo_metadata = "0.19.2"
+serde_json = "1"
+spdx = "0.13.5"
+toml = "1.1.6"
+
+[lints]
+workspace = true
