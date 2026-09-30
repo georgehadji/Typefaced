@@ -18,12 +18,12 @@ Pass criteria for the winner at 30,000 glyphs: replace one glyph in under 50 µs
 |---|---|
 | CPU | Intel Core i7-9750H, 6 cores / 12 threads, 2.59 GHz base (laptop, "High performance" power plan) |
 | RAM | 32 GB (2 × 16 GB DDR4-3200) |
-| OS | Windows 11 Pro, build 26200 |
+| OS | Windows 11 Pro, build 26200 (runs 1 and 2); build 26300 after an OS update (run 3) |
 | Toolchain | rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1, `bench` profile (opt-level 3) |
 | Crates | `imbl` 7.0.2 (MPL-2.0+), `criterion` 0.8.2 (Apache-2.0 OR MIT, default features off, `cargo_bench_support` only) |
-| Load | Another agent session was running `cargo` builds on the same machine. Run 1 of the timing benchmarks ran while ~14 `rustc`/`cargo` processes were active; run 2 and the 65,535-glyph run ran after they had finished. The two runs agree within about 20%; the tables below use run 2. The memory numbers are deterministic allocation counts and do not depend on load. |
+| Load | Another agent session was running `cargo` builds on the same machine. Run 1 of the timing benchmarks ran while ~14 `rustc`/`cargo` processes were active; run 2 and the 65,535-glyph run ran after they had finished. The two runs agree within about 20%; the tables below use run 2. Run 3, after review, re-timed only the single-glyph edits at three positions on an otherwise idle machine; its numbers replace run 2's `replace_1` (see *Single edits by position*). The memory numbers are deterministic allocation counts and do not depend on load. |
 
-**Absolute timings on this laptop are slow.** Cloning one `Arc` costs about 60 ns including benchmark overhead, and copying a 1,000-pointer `Vec<Arc<_>>` costs about 40 µs, so each reference-count increment costs roughly 40–60 ns here. Every candidate pays for reference counts in the same way, so the ranking holds, but faster desktop hardware should show smaller absolute numbers.
+**Absolute timings on this laptop are high.** Copying a 1,000-pointer `Vec<Arc<_>>` costs about 30–40 µs, roughly 30–40 ns per pointer. Each increment touches a separate 2.5 KiB glyph, so cache misses are a likely cause, but this was not profiled. Every candidate pays for reference counts in the same way, so the ranking holds; absolute numbers on other hardware are unknown until re-measured (see *Follow-ups*).
 
 All dependencies (63 packages including transitive ones, from `cargo metadata`) are on the Appendix B allow-list: every package offers MIT or Apache-2.0 (Unlicense, Zlib and BSD-2-Clause appear only as `OR` alternatives), `unicode-ident` adds Unicode-3.0, and the `ciborium` crates are Apache-2.0 only. `imbl` and `imbl-sized-chunks` are MPL-2.0+ and are used unmodified.
 
@@ -38,7 +38,8 @@ All dependencies (63 packages including transitive ones, from `cargo metadata`) 
 - **Correctness.** Unit tests run the same scenario on all four (a 100-glyph transaction, then single edits at chunk edges and on the last glyph of a 1,000-glyph table, whose last chunk is partial). They check that the final contents are identical, that `get` and `iter` agree, and that the base snapshot is unchanged.
 - **Timing** (criterion, 100 samples, 3 s warm-up, 5 s measurement), at 1,000 and 30,000 glyphs, plus 65,535 (the OpenType maximum) in a separate run:
   - `clone`: take a snapshot.
-  - `replace_1` / `replace_100`: one transaction replacing 1 or 100 glyphs spread over the table (prime stride). Dropping the new snapshot is left out of the timing (`iter_with_large_drop`), because history evicts old snapshots off the edit path.
+  - `replace_1_first` / `replace_1_middle` / `replace_1_last`: one transaction replacing the first, middle or last glyph. Position matters for `imbl::Vector`, which keeps both ends of the tree in separate buffers. The exit criterion uses the slowest of the three.
+  - `replace_100`: one transaction replacing 100 glyphs spread over the table (prime stride). Dropping the new snapshot is left out of the timing (`iter_with_large_drop`), because history evicts old snapshots off the edit path.
   - `iterate`: visit every glyph and read its contour count.
   - `lookup_1000`: 1,000 lookups by ID spread over the table.
 - **Memory.** A counting `GlobalAlloc` (forwarding to `System`) tracks live requested bytes. For each candidate: build the base document, then create 200 snapshots, each the previous one with one more glyph (a different one each time) replaced by an edited copy, and keep all of them alive. "Growth" is the bytes held by the 200 snapshots divided by the base document's bytes. The edited glyphs themselves (about 0.5 MiB for 200) are part of any undo history, so the table also shows the growth without them, which is the cost of the data structure alone.
@@ -57,10 +58,12 @@ cargo bench --manifest-path spikes/spike-collections/Cargo.toml --bench memory  
 
 | Candidate | Replace 1 glyph (< 50 µs) | 200-snapshot growth (≤ 10%) | Passes |
 |---|---:|---:|---|
-| naive (baseline) | 1,807 µs | 62.7% | no |
-| chunked | 27.6 µs | 2.7% | yes |
-| imbl-vector | 3.4 µs | 1.6% | yes |
-| imbl-ordmap | 5.1 µs | 1.0% | yes |
+| naive (baseline) | 1,179 µs | 62.7% | no |
+| chunked | 23.7 µs | 2.7% | yes |
+| imbl-vector | 6.6 µs | 1.6% | yes |
+| imbl-ordmap | 3.6 µs | 1.0% | yes |
+
+Replace times are the slowest of the three positions in run 3.
 
 The naive baseline's memory grows 62.7% (the plan expected about 70%; the exact figure depends on the glyph size, since each snapshot copies 8 bytes per glyph against about 2.5 KiB per glyph of outline data).
 
@@ -71,9 +74,6 @@ The naive baseline's memory grows 62.7% (the plan expected about 70%; the exact 
 | clone | 1,000 | 64 ns | 67 ns | 391 ns | 85 ns |
 | clone | 30,000 | 64 ns | 70 ns | 360 ns | 79 ns |
 | clone | 65,535 | 58 ns | 64 ns | 363 ns | 73 ns |
-| replace_1 | 1,000 | 40.7 µs | 4.7 µs | 3.2 µs | 4.0 µs |
-| replace_1 | 30,000 | 1,807 µs | 27.6 µs | 3.4 µs | 5.1 µs |
-| replace_1 | 65,535 | 3,394 µs | **49.4 µs** | 2.6 µs | 4.5 µs |
 | replace_100 | 1,000 | 54.7 µs | 98.6 µs | 97.3 µs | 150 µs |
 | replace_100 | 30,000 | 1,564 µs | 463 µs | 517 µs | 304 µs |
 | replace_100 | 65,535 | 3,516 µs | 472 µs | 520 µs | 480 µs |
@@ -84,7 +84,23 @@ The naive baseline's memory grows 62.7% (the plan expected about 70%; the exact 
 | lookup_1000 | 30,000 | 16.1 µs | 24.4 µs | 287 µs | 609 µs |
 | lookup_1000 | 65,535 | 12.5 µs | 25.4 µs | 332 µs | 595 µs |
 
-Run 1 (under build load) gave the same ranking; for example at 30,000 glyphs `replace_1` was 1,960 / 28.0 / 3.3 / 5.9 µs.
+Run 1 (under build load) gave the same ranking.
+
+### Single edits by position (criterion median, run 3)
+
+| Glyphs | Position | naive | chunked | imbl-vector | imbl-ordmap |
+|---:|---|---:|---:|---:|---:|
+| 1,000 | first | 29.9 µs | 3.4 µs | 2.3 µs | 2.1 µs |
+| 1,000 | middle | 28.0 µs | 3.3 µs | 3.8 µs | 2.2 µs |
+| 1,000 | last | 28.5 µs | 2.5 µs | 1.8 µs | 2.7 µs |
+| 30,000 | first | 1,150 µs | 23.7 µs | 2.3 µs | 3.1 µs |
+| 30,000 | middle | 1,141 µs | 22.6 µs | 6.6 µs | 3.1 µs |
+| 30,000 | last | 1,179 µs | 21.3 µs | 1.9 µs | 3.6 µs |
+| 65,535 | first | 2,807 µs | 50.4 µs | 2.3 µs | 3.4 µs |
+| 65,535 | middle | 2,694 µs | **54.5 µs** | 7.3 µs | 3.3 µs |
+| 65,535 | last | 2,707 µs | 52.9 µs | 2.4 µs | 3.8 µs |
+
+Run 2 timed a single edit of glyph 0 only (the first position): 3.4 µs for `imbl::Vector` at 30,000 glyphs. That position is `imbl::Vector`'s best case, because it edits the front buffer without descending the tree. Review caught this, and run 3 replaced those numbers. Run 3's naive and chunked numbers are also lower than run 2's (1,179 vs. 1,807 µs for naive at 30,000 glyphs), which shows how much this machine's timings vary between runs.
 
 ### Memory held by 200 single-edit snapshots
 
@@ -105,13 +121,13 @@ Run 1 (under build load) gave the same ranking; for example at 30,000 glyphs `re
 
 At 1,000 glyphs most of the growth is the 200 edited glyphs themselves (200 of 1,000 glyphs changed); the §10.4 budget (1,000 glyphs, 200 undo steps, under 500 MB) is met by every candidate, including the naive one.
 
-The counter sees requested bytes, not allocator rounding or fragmentation. The structural candidates make one to two more small allocations per edit than the naive one, so their real overhead is slightly higher than shown, but not by enough to approach 10%.
+The counter sees requested bytes, not allocator rounding or fragmentation. At 30,000 glyphs, 200 edits make 1,800 allocations for naive and chunked (9 per edit), 2,194 for `imbl::Vector` (about 11) and 2,400 for `imbl::OrdMap` (12). The `imbl` candidates' real overhead is therefore slightly higher than shown, but not by enough to approach 10%.
 
 ### What the numbers say
 
 - **All three structural candidates meet both exit criteria at 30,000 glyphs.** The naive baseline fails both by a wide margin.
-- **Writes.** `imbl` replace cost is O(log n) and stays at 3–5 µs up to 65,535 glyphs. The chunked vector copies its spine (one pointer per 64 glyphs) on every transaction, so its cost grows linearly: 4.7 µs at 1,000, 27.6 µs at 30,000 and 49.4 µs at 65,535 glyphs, right at the 50 µs budget on this machine.
-- **Reads.** The chunked vector reads as fast as a plain `Vec`. `imbl::Vector` is about 4.5–8× slower to iterate and 12–13× slower per lookup (about 0.3 µs per lookup); `imbl::OrdMap` is about twice as slow again. In absolute terms these costs are small: a full pass over 30,000 glyphs takes 1.3 ms, and a canvas frame that resolves 300 glyphs spends about 0.1 ms on lookups.
+- **Writes.** `imbl::Vector` replace cost grows slowly in the middle of the tree (3.8, 6.6 and 7.3 µs at 1,000, 30,000 and 65,535 glyphs) and stays about 2 µs at either end. `imbl::OrdMap` stays at 2–4 µs. The chunked vector copies its spine (one pointer per 64 glyphs) on every transaction, so its cost grows linearly: about 3 µs at 1,000, 24 µs at 30,000 and 50–55 µs at 65,535 glyphs, just over the 50 µs budget on this machine.
+- **Reads.** The chunked vector reads as fast as a plain `Vec`. `imbl::Vector` is about 4.5–8× slower to iterate and 9–13× slower per lookup (about 0.3 µs per lookup). `imbl::OrdMap` is 1.4–1.7× slower again to iterate and about 2× slower per lookup. In absolute terms these costs are small: a full pass over 30,000 glyphs takes 1.3 ms, and a canvas frame that resolves 300 glyphs spends about 0.1 ms on lookups.
 - **Memory.** All structural candidates stay under 3%; `imbl` shares the most.
 
 ## Decision
@@ -120,16 +136,18 @@ The counter sees requested bytes, not allocator rounding or fragmentation. The s
 
 Reasons:
 
-1. **Write cost that does not grow with the font.** `imbl` replaces a glyph in about 3 µs at every size tested, 15× under the budget. The chunked vector passes at 30,000 glyphs but reaches the 50 µs budget at the OpenType maximum of 65,535 glyphs on this machine. 100-glyph transactions cost about the same for both (463 vs. 517 µs at 30,000 glyphs).
-2. **Reads are slower but cheap enough.** `imbl`'s read penalty (0.3 µs per lookup, 1.3 ms per full pass at 30,000 glyphs) is far below frame and compile budgets. If profiling in M1 or later shows a hot read path, a per-snapshot memoised cache (§5.12) is the first fix, not a different collection.
-3. **One dependency covers the other tables.** Kerning, groups and the name ↔ ID index also need persistent maps; `imbl::OrdMap` and `imbl::HashMap` cover them. The chunked vector covers only the dense glyph table, so Typefaced would still need a map library or more in-house code.
-4. **Less code to own.** `imbl` is maintained and tested upstream. The MPL-2.0 file-level copyleft is respected by using the crate unmodified (Appendix B).
+Both `imbl` and the chunked vector pass the exit criteria at 30,000 glyphs, so the choice rests mainly on reasons 1 and 2; reasons 3 and 4 add margin.
+
+1. **One dependency covers the other tables.** Kerning, groups and the name ↔ ID index also need persistent maps; `imbl::OrdMap` and `imbl::HashMap` cover them. The chunked vector covers only the dense glyph table, so Typefaced would still need a map library or more in-house code.
+2. **Less code to own.** `imbl` is maintained and tested upstream. The MPL-2.0 file-level copyleft is respected by using the crate unmodified (Appendix B).
+3. **Write cost that grows slowly.** `imbl::Vector` edits a glyph in at most 6.6 µs at 30,000 glyphs and 7.3 µs at 65,535, about 7× under the budget. The chunked vector's cost grows linearly and slightly exceeds the budget at the OpenType maximum on this machine (50–55 µs). That is a risk for the largest fonts, not a failure of the exit criteria, and the medians come from single runs on a noisy laptop. 100-glyph transactions cost about the same for both (463 vs. 517 µs at 30,000 glyphs).
+4. **Reads are slower but cheap enough.** `imbl`'s read penalty (0.3 µs per lookup, 1.3 ms per full pass at 30,000 glyphs) is far below frame and compile budgets. If profiling in M1 or later shows a hot read path, a per-snapshot memoised cache (§5.12) is the first fix, not a different collection.
 
 `imbl::OrdMap` wins on memory but costs about twice as much as `imbl::Vector` for reads. Glyph IDs stay dense: a deleted glyph leaves a tombstone slot (for example `Option<Arc<Glyph>>`), and IDs are compacted only on load or save, so the vector is the better fit for the glyph table.
 
 ## Follow-ups
 
-- **M1 (`tf-model`).** Implement `GlyphTable` on `imbl::Vector`, with tombstones for deleted glyphs, and add `imbl` to `deny.toml` with its MPL-2.0 exception noted. Fold MPL-2.0 (unmodified) into the `cargo-deny` allow-list if Step 3.1 has not done so.
+- **M1 (`tf-model`).** Implement `GlyphTable` on `imbl::Vector`, with tombstones for deleted glyphs. Step 3.1 already allows MPL-2.0 in `deny.toml`, and `MPL-2.0` satisfies `imbl`'s `MPL-2.0+`, so no per-crate exception is needed; the "unmodified" condition is kept by never patching or vendoring the crate.
 - **M1.** Benchmark `imbl::OrdMap` and `imbl::HashMap` for kerning (tens of thousands of pairs) and the name index before choosing between them; this spike measured glyph-sized values only.
-- **M1.** Re-run this spike's `replace_1` and `iterate` numbers on CI hardware to get absolute figures that are not skewed by this laptop's slow reference counting, and keep a regression benchmark for the 50 µs single-edit budget in `tf-model`.
+- **M1.** Re-run this spike's single-edit and `iterate` numbers on CI hardware, with several runs to show the spread, and keep a regression benchmark for the 50 µs single-edit budget in `tf-model` that edits glyphs in the middle of the table, not only at the ends.
 - **Step 12.** Add the spike commands above to `CLAUDE.md`, and record that ADR-0017 is Accepted.

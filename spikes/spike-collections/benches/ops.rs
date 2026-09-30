@@ -1,4 +1,4 @@
-//! Timing benchmarks for each candidate at 1,000 and 30,000 glyphs.
+//! Timing benchmarks for each candidate at 1,000, 30,000 and 65,535 glyphs.
 //! Run: `cargo bench --manifest-path spikes/spike-collections/Cargo.toml --bench ops`
 
 use std::hint::black_box;
@@ -7,7 +7,8 @@ use std::sync::Arc;
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main};
 use spike_collections::{
-    Chunked, Glyph, GlyphTable, ImblOrdMap, ImblVector, Naive, make_edits, make_glyphs, spread_ids,
+    Chunked, Glyph, GlyphId, GlyphTable, ImblOrdMap, ImblVector, Naive, edited, make_edits,
+    make_glyphs, spread_ids,
 };
 
 // 65,535 is the OpenType maximum (a u16 glyph ID).
@@ -16,7 +17,13 @@ const LOOKUPS: usize = 1_000;
 
 fn run<T: GlyphTable>(group: &mut BenchmarkGroup<'_, WallTime>, glyphs: &[Arc<Glyph>]) {
     let table = T::from_glyphs(glyphs.to_vec());
-    let one = make_edits(glyphs, 1);
+    let last = glyphs.len() - 1;
+    // Edit cost can depend on where the glyph sits (imbl's vector keeps its ends in
+    // separate buffers), so single edits are timed at the first, middle and last glyph.
+    let singles = [("first", 0), ("middle", last / 2), ("last", last)].map(|(at, index)| {
+        let id = GlyphId::try_from(index).expect("glyph count fits in u32");
+        (at, vec![(id, Arc::new(edited(&glyphs[index])))])
+    });
     let hundred = make_edits(glyphs, 100);
     let ids = spread_ids(glyphs.len(), LOOKUPS);
 
@@ -25,9 +32,11 @@ fn run<T: GlyphTable>(group: &mut BenchmarkGroup<'_, WallTime>, glyphs: &[Arc<Gl
         b.iter(|| black_box(&table).clone());
     });
     // Dropping the new snapshot is left out: history evicts old snapshots off the edit path.
-    group.bench_function(BenchmarkId::new("replace_1", T::NAME), |b| {
-        b.iter_with_large_drop(|| black_box(&table).replace(black_box(&one)));
-    });
+    for (at, one) in &singles {
+        group.bench_function(BenchmarkId::new(format!("replace_1_{at}"), T::NAME), |b| {
+            b.iter_with_large_drop(|| black_box(&table).replace(black_box(one)));
+        });
+    }
     group.bench_function(BenchmarkId::new("replace_100", T::NAME), |b| {
         b.iter_with_large_drop(|| black_box(&table).replace(black_box(&hundred)));
     });
