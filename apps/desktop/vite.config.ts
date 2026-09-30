@@ -34,5 +34,15 @@ export default defineConfig(() => ({
   // Vitest reads this file too, so tests always use the app's Vite settings.
   test: {
     environment: "jsdom",
+    // On in CI (GitHub sets CI=true); run locally with `pnpm test -- --coverage`.
+    coverage: {
+      enabled: process.env.CI === "true",
+      provider: "v8",
+      // Only this app's code: the generated bindings are another package.
+      include: ["src/**/*.{ts,tsx}"],
+      // The entry point only mounts <App /> into the page.
+      exclude: ["src/main.tsx", "src/**/*.test.{ts,tsx}"],
+      thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
+    },
   },
 }));

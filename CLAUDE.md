@@ -41,3 +41,11 @@ Build the frontend before any cargo command: the desktop crate embeds `apps/desk
 | Layering and crate template | `cargo xtask check-deps` |
 | Licenses (Rust · npm) | `cargo deny check` · `cargo xtask licenses-npm` (one allow-list: `deny.toml`) |
 | Coverage gates (domain + application ≥ 90%, adapters ≥ 80%) | `cargo xtask coverage` |
+
+## CI
+GitHub Actions (`.github/workflows/ci.yml`) runs on every PR and on pushes to `main`:
+- `windows` (windows-latest): the invariants in order: install, frontend build, fmt, clippy,
+  tests, bindings diff, `pnpm lint && pnpm typecheck && pnpm test` (with TS coverage >= 80%),
+  `cargo xtask check-deps`, no API keys, clean tree. On `main` also the debug app build.
+- `gates` (ubuntu-latest): `cargo deny check`, `cargo xtask licenses-npm`, `cargo xtask coverage`.
+  It never builds the desktop crate.
