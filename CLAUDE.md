@@ -34,10 +34,18 @@ Build the frontend before any cargo command: the desktop crate embeds `apps/desk
 | Dev (app with hot reload) | `pnpm --filter @typefaced/desktop tauri dev` |
 | Build the frontend | `pnpm --filter @typefaced/desktop build` |
 | Build the app (debug, no installer) | `pnpm --filter @typefaced/desktop tauri build --debug --no-bundle` |
-| Test | `cargo test --workspace` · `pnpm test` |
+| Test | `cargo test --workspace` · `pnpm test` (with coverage gate: `pnpm test:ci`) |
 | Lint | `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `pnpm lint` (fix: `pnpm exec biome check --write .`) |
 | Typecheck | `pnpm typecheck` |
 | Regenerate the TypeScript bindings | `cargo test -p typefaced-desktop export_bindings`, then commit `packages/bindings/src/index.ts` |
 | Layering and crate template | `cargo xtask check-deps` |
 | Licenses (Rust · npm) | `cargo deny check` · `cargo xtask licenses-npm` (one allow-list: `deny.toml`) |
 | Coverage gates (domain + application ≥ 90%, adapters ≥ 80%) | `cargo xtask coverage` |
+
+## CI
+GitHub Actions (`.github/workflows/ci.yml`) runs on every PR and on pushes to `main`:
+- `windows` (windows-latest): the invariants in order: install, frontend build, fmt, clippy,
+  tests, bindings diff, `pnpm lint && pnpm typecheck && pnpm test:ci` (TS coverage >= 80%),
+  `cargo xtask check-deps`, no API keys, clean tree. On `main` also the debug app build.
+- `gates` (ubuntu-latest): `cargo deny check`, `cargo xtask licenses-npm`, `cargo xtask coverage`.
+  It never builds the desktop crate.

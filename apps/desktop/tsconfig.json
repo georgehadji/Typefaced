@@ -13,6 +13,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    // Browser code: no Node globals. Ambient types come only from explicit references.
+    "types": [],
 
     /* Linting */
     "strict": true,

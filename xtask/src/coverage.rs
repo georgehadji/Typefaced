@@ -64,6 +64,20 @@ pub fn gates(crates: &[CoveredCrate]) -> Vec<Gate> {
         .collect()
 }
 
+/// The `cargo` arguments that instrument and test every gated crate, and only those:
+/// the driver (Tauri, WebView) is never built, so this runs on Linux CI without
+/// WebKitGTK or the frontend build. Empty when there is nothing to gate.
+pub fn llvm_cov_args(gates: &[Gate]) -> Vec<&str> {
+    if gates.is_empty() {
+        return Vec::new();
+    }
+    let mut args = vec!["llvm-cov", "--locked", "--no-report"];
+    for name in gates.iter().flat_map(|gate| &gate.crates) {
+        args.extend(["--package", name.as_str()]);
+    }
+    args
+}
+
 /// Matches any file under `dir`, with either path separator.
 fn dir_regex(dir: &[String]) -> String {
     const SEP: &str = r"[\\/]";
@@ -117,6 +131,32 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn llvm_cov_builds_only_the_gated_crates() {
+        let crates = [
+            krate("tf-core", Layer::Domain, "crates/tf-core"),
+            krate("tf-io", Layer::Adapter, "crates/tf-io"),
+            krate("typefaced-desktop", Layer::Driver, "apps/desktop/src-tauri"),
+        ];
+        assert_eq!(
+            llvm_cov_args(&gates(&crates)),
+            [
+                "llvm-cov",
+                "--locked",
+                "--no-report",
+                "--package",
+                "tf-core",
+                "--package",
+                "tf-io"
+            ]
+        );
+    }
+
+    #[test]
+    fn llvm_cov_has_nothing_to_run_without_gates() {
+        assert!(llvm_cov_args(&[]).is_empty());
     }
 
     #[test]
