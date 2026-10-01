@@ -73,6 +73,12 @@ unmaintained = "workspace"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
+    # quick-xml 0.38.4 reaches us only through fontc 1.0.0 -> ufo2fontir 1.0.0 -> norad
+    # 0.18.4, which requires quick-xml ^0.38 (the fix is >= 0.41). Impact: a crafted UFO or
+    # designspace that the user opens can exhaust CPU or memory (denial of service, no code
+    # execution). Remove both entries when norad moves to quick-xml >= 0.41 (Spike 1 report).
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml via norad 0.18.4; no fixed norad yet; DoS on crafted local sources only" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml via norad 0.18.4; no fixed norad yet; DoS on crafted local sources only" },
     #"RUSTSEC-0000-0000",
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
