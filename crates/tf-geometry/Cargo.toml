@@ -1,0 +1,20 @@
+[package]
+name = "tf-geometry"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Geometry kernel on packed outlines: hit testing and point edits (native and WASM)"
+
+[package.metadata.typefaced]
+layer = "domain"
+
+[dependencies]
+kurbo = "0.13.1"
+
+[dev-dependencies]
+proptest = "1"
+
+[lints]
+workspace = true
