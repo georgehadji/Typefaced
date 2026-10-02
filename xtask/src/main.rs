@@ -1,5 +1,6 @@
-//! Repository gates. Run with `cargo xtask <task>`; see `CLAUDE.md`.
+//! Repository gates. Run with `cargo xtask <task>`; see `AGENTS.md`.
 
+mod context;
 mod corpus;
 mod coverage;
 mod deps;
@@ -10,8 +11,8 @@ use std::process::{Command, ExitCode};
 
 use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
 
-const USAGE: &str =
-    "usage: cargo xtask <check-deps | licenses-npm | coverage | corpus fetch | corpus verify>";
+const USAGE: &str = "usage: cargo xtask <check-deps | licenses-npm | coverage | \
+     corpus fetch | corpus verify | context check | context update>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -21,6 +22,8 @@ fn main() -> ExitCode {
         ["coverage"] => run_coverage(),
         ["corpus", "fetch"] => corpus_fetch(),
         ["corpus", "verify"] => corpus_verify(),
+        ["context", "check"] => context_check(),
+        ["context", "update"] => context_update(),
         _ => Err(USAGE.into()),
     };
     match result {
@@ -178,6 +181,64 @@ fn cargo(args: &[&str]) -> Result<(), String> {
     } else {
         Err(format!("cargo {} failed ({status})", args.join(" ")))
     }
+}
+
+/// Files git tracks, plus untracked files that are not ignored, as `/`-separated paths.
+/// Files deleted from the working tree are left out.
+fn repo_files() -> Result<Vec<String>, String> {
+    let root = workspace_root();
+    let args = [
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+    ];
+    let listing = tool(&root, "git", &args)?;
+    // `tool` decodes lossily; a replaced character means a path that is not UTF-8.
+    if listing.contains(char::REPLACEMENT_CHARACTER) {
+        return Err("git lists a path that is not valid UTF-8; rename it".into());
+    }
+    let files: std::collections::BTreeSet<String> = listing
+        .split(char::from(0))
+        .filter(|path| !path.is_empty() && root.join(path).is_file())
+        .map(String::from)
+        .collect();
+    Ok(files.into_iter().collect())
+}
+
+/// Reads a text file with LF line endings, as the repository stores it.
+fn read_text(path: &Path) -> Result<String, String> {
+    std::fs::read_to_string(path)
+        .map(|text| text.replace("\r\n", "\n"))
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))
+}
+
+fn context_check() -> Result<(), String> {
+    let root = workspace_root();
+    let files = repo_files()?;
+    let texts = files
+        .iter()
+        .filter(|path| context::is_context(path) || path.ends_with(".rs"))
+        .map(|path| Ok((path.clone(), read_text(&root.join(path))?)))
+        .collect::<Result<_, String>>()?;
+    let tree = context::Tree { files, texts };
+    report(&context::violations(&tree))?;
+    println!("context: {} files mapped", tree.files.len());
+    Ok(())
+}
+
+fn context_update() -> Result<(), String> {
+    let path = workspace_root().join(context::CONTEXT);
+    let text = read_text(&path)?;
+    let updated = context::with_file_map(&text, &repo_files()?)?;
+    if updated == text {
+        println!("context update: the file map is up to date");
+        return Ok(());
+    }
+    std::fs::write(&path, updated).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    println!("context update: file map rewritten; run `cargo xtask context check`");
+    Ok(())
 }
 
 /// Upper bound for one downloaded archive (1 GiB); the largest pinned one is about 21 MB.
