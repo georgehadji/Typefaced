@@ -3,7 +3,19 @@
 Proprietary desktop font editor: Tauri 2 shell, Rust engine, React UI. All rights reserved.
 
 ## Read first
+- **Before any task, read `CONTEXT.md` in the root.** It says what the project does, maps
+  every tracked file and links to the `CONTEXT.md` of every folder.
+- To find a file, use the root map, then open the `CONTEXT.md` of the folder you work in.
+  Search the tree (Glob/Grep) only when the maps do not answer the question.
 - Architecture: docs/implementation-plan.md · Decisions: docs/adr/ · Active plan: plans/ (status table at the top)
+
+## Keep the maps true
+- When you add, remove, rename or change the role of a file, update that folder's
+  `CONTEXT.md` in the same commit. A new folder gets its own `CONTEXT.md` and a row in the
+  root `CONTEXT.md` (folder map and file map).
+- No `CONTEXT.md` in folders that tools read in full: `apps/desktop/src-tauri/capabilities/`
+  and UFO packages such as `tests/fixtures/min.ufo/`. The parent folder describes them.
+- If a `CONTEXT.md` disagrees with the code, the code wins: fix the `CONTEXT.md`.
 
 ## Hard rules
 - Clean room: never read, copy or paraphrase source code of GPL/AGPL/LGPL projects
