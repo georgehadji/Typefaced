@@ -8,6 +8,8 @@ pure: no I/O, no async runtime, no Tauri. Dependencies point inward only
 | Subfolder | Layer | Context |
 |---|---|---|
 | `tf-commands/` | application | [CONTEXT.md](tf-commands/CONTEXT.md): typed command catalog shared by UI, AI, MCP and CLI |
+| `tf-geometry/` | domain | [CONTEXT.md](tf-geometry/CONTEXT.md): geometry kernel on packed outlines (hit testing, point edits) |
+| `tf-wasm/` | driver | [CONTEXT.md](tf-wasm/CONTEXT.md): WebAssembly facade over `tf-geometry` for the UI |
 
 To add a crate: create `crates/<name>/Cargo.toml` with `edition`, `rust-version`,
 `license` and `publish` set to `.workspace = true`, `[lints] workspace = true` and
