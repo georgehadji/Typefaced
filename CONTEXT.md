@@ -199,7 +199,9 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── 0019-clean-room-spacing-algorithm.md
 │   │   ├── README.md
 │   │   └── template.md
-│   ├── spikes/spike-6-collections.md
+│   ├── spikes/
+│   │   ├── spike-1-fontc.md
+│   │   └── spike-6-collections.md
 │   ├── implementation-plan.md
 │   └── research.md
 ├── packages/bindings/
