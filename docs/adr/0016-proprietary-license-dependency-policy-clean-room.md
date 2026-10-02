@@ -39,14 +39,14 @@ Source: [implementation plan](../implementation-plan.md) §1 (D1, repository not
 - Never read, copy or paraphrase the source code of the GPL projects Fontra, FontForge, Glyphr Studio, BirdFont, HT Letterspacer and potrace.
 - Their documentation and UX may serve as inspiration only.
 - Algorithms come from published descriptions. Specifications, papers and permissively licensed projects (fontc, fontations, allsorts, kurbo, fontTools) are fine.
-- The rule lives in `CLAUDE.md` and the contributing guide (§11.3). [ADR-0019](0019-clean-room-spacing-algorithm.md) applies it to spacing.
+- The rule lives in `AGENTS.md` (which `CLAUDE.md` imports) and the contributing guide (§11.3). [ADR-0019](0019-clean-room-spacing-algorithm.md) applies it to spacing.
 
 ## Consequences
 
 - Copyleft libraries are off limits, even where they would save work.
 - Every new dependency must pass the license gates before it lands.
 - Every release carries third-party notices and a CycloneDX software bill of materials (§11.1, §11.3).
-- Agents need the clean-room rule and the stop-and-ask list in their instructions; `CLAUDE.md` carries both.
+- Agents need the clean-room rule and the stop-and-ask list in their instructions; `AGENTS.md` carries both, and `CLAUDE.md` imports it.
 
 ## Alternatives considered
 

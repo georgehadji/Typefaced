@@ -8,3 +8,10 @@ pure: no I/O, no async runtime, no Tauri. Dependencies point inward only
 | Subfolder | Layer | Context |
 |---|---|---|
 | `tf-commands/` | application | [CONTEXT.md](tf-commands/CONTEXT.md): typed command catalog shared by UI, AI, MCP and CLI |
+
+To add a crate: create `crates/<name>/Cargo.toml` with `edition`, `rust-version`,
+`license` and `publish` set to `.workspace = true`, `[lints] workspace = true` and
+`[package.metadata.typefaced] layer = "<layer>"`. Give it a `CONTEXT.md` (and one in
+`src/`), start each Rust file with a `//!` comment, add a row above and to the root
+folder map, then run `cargo xtask check-deps`, `cargo xtask context update` and
+`cargo xtask context check`.

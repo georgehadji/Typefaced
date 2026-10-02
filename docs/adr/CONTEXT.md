@@ -3,6 +3,9 @@
 Architecture decision records. Each ADR's `Status:` line is the only source of its status
 (a spike moves its ADR from Proposed to Accepted or Rejected). Up: [docs/CONTEXT.md](../CONTEXT.md).
 
+To add an ADR: copy `template.md` to the next free number, add it to the index in
+`README.md` and a row below, then run `cargo xtask context update` (root file map).
+
 | File | What it does |
 |---|---|
 | `README.md` | How to add an ADR, how references (§, Step N) resolve, and the ADR index |
