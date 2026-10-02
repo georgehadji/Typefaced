@@ -65,6 +65,9 @@ and version over typed IPC. The status of each step is in the table at the top o
 | `packages/bindings/src/` | [CONTEXT.md](packages/bindings/src/CONTEXT.md) | The generated `index.ts` |
 | `plans/` | [CONTEXT.md](plans/CONTEXT.md) | Milestone construction plans |
 | `spikes/` | [CONTEXT.md](spikes/CONTEXT.md) | Throw-away experiments, each its own Cargo workspace |
+| `spikes/spike-boolean/` | [CONTEXT.md](spikes/spike-boolean/CONTEXT.md) | Spike 5: boolean engine for overlap removal |
+| `spikes/spike-boolean/src/` | [CONTEXT.md](spikes/spike-boolean/src/CONTEXT.md) | Engines, case set, measurements, report runner |
+| `spikes/spike-boolean/benches/` | [CONTEXT.md](spikes/spike-boolean/benches/CONTEXT.md) | Timing benchmark |
 | `spikes/spike-collections/` | [CONTEXT.md](spikes/spike-collections/CONTEXT.md) | Spike 6: persistent collections |
 | `spikes/spike-collections/src/` | [CONTEXT.md](spikes/spike-collections/src/CONTEXT.md) | Candidate glyph tables |
 | `spikes/spike-collections/benches/` | [CONTEXT.md](spikes/spike-collections/benches/CONTEXT.md) | Timing and memory benchmarks |
@@ -181,7 +184,9 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── 0019-clean-room-spacing-algorithm.md
 │   │   ├── README.md
 │   │   └── template.md
-│   ├── spikes/spike-6-collections.md
+│   ├── spikes/
+│   │   ├── spike-5-boolean.md
+│   │   └── spike-6-collections.md
 │   ├── implementation-plan.md
 │   └── research.md
 ├── packages/bindings/
@@ -189,13 +194,24 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   ├── package.json
 │   └── tsconfig.json
 ├── plans/typefaced-m0-foundations-and-spikes.md
-├── spikes/spike-collections/
-│   ├── benches/
-│   │   ├── memory.rs
-│   │   └── ops.rs
-│   ├── src/lib.rs
-│   ├── Cargo.lock
-│   └── Cargo.toml
+├── spikes/
+│   ├── spike-boolean/
+│   │   ├── benches/engines.rs
+│   │   ├── src/
+│   │   │   ├── cases.rs
+│   │   │   ├── engines.rs
+│   │   │   ├── lib.rs
+│   │   │   ├── main.rs
+│   │   │   └── measure.rs
+│   │   ├── Cargo.lock
+│   │   └── Cargo.toml
+│   └── spike-collections/
+│       ├── benches/
+│       │   ├── memory.rs
+│       │   └── ops.rs
+│       ├── src/lib.rs
+│       ├── Cargo.lock
+│       └── Cargo.toml
 ├── tests/
 │   ├── corpus/
 │   │   ├── .gitignore

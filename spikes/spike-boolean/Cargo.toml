@@ -1,0 +1,36 @@
+[package]
+name = "spike-boolean"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+license = "LicenseRef-Proprietary"
+publish = false
+description = "Spike 5 (ADR-008): skia PathOps vs. linesweeper for overlap removal"
+
+# Own workspace root: stays out of the root workspace, its lockfile and product CI.
+[workspace]
+
+[features]
+default = ["skia", "sweep"]
+# Each engine is optional so `cargo build --no-default-features --features <engine>`
+# measures one engine's build time and binary-size cost on its own.
+skia = ["dep:skia-safe"]
+sweep = ["dep:linesweeper"]
+
+[dependencies]
+# MIT OR Apache-2.0.
+kurbo = "0.13"
+# MIT OR Apache-2.0. Reads the corpus and fixture UFOs.
+norad = { version = "=0.18.4", features = ["kurbo"] }
+# MIT bindings; Skia itself is BSD-3-Clause. Default features are kept: the
+# prebuilt Skia binaries are only published for the default feature set.
+skia-safe = { version = "=0.153.3", optional = true }
+# MIT OR Apache-2.0, beta.
+linesweeper = { version = "=0.4.0", optional = true }
+
+[dev-dependencies]
+criterion = { version = "=0.8.2", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "engines"
+harness = false
