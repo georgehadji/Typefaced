@@ -8,6 +8,7 @@ pure: no I/O, no async runtime, no Tauri. Dependencies point inward only
 | Subfolder | Layer | Context |
 |---|---|---|
 | `tf-commands/` | application | [CONTEXT.md](tf-commands/CONTEXT.md): typed command catalog shared by UI, AI, MCP and CLI |
+| `tf-compile/` | adapter | [CONTEXT.md](tf-compile/CONTEXT.md): compiles UFO and designspace sources to TTF through fontc, in-process |
 
 To add a crate: create `crates/<name>/Cargo.toml` with `edition`, `rust-version`,
 `license` and `publish` set to `.workspace = true`, `[lints] workspace = true` and
