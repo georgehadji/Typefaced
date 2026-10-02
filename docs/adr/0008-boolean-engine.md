@@ -1,5 +1,5 @@
 # ADR-0008: Boolean engine: skia-safe vs. linesweeper (from the spike)
-Status: Accepted · Date: 2026-10-01
+Status: Accepted · Date: 2026-10-03
 
 Source: [implementation plan](../implementation-plan.md) §5.2, §5.3, §5.7, §5.10, §5.13, §15 (R10), Appendix B; [research](../research.md) §6.1, §6.2; [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) deviations 3 and 8, Steps 10 and 12; [Spike 5 report](../spikes/spike-5-boolean.md).
 
@@ -24,7 +24,8 @@ Source: [implementation plan](../implementation-plan.md) §5.2, §5.3, §5.7, §
 - Overlap removal costs about 1.6 ms per glyph (criterion mean on Source Sans), about 3× Skia; a 2,500-glyph master takes at most about 4 s on one core. Glyphs are independent, so export parallelises them.
 - No native code, no prebuilt binaries and no license additions: linesweeper is pure Rust under MIT OR Apache-2.0, on every target. It adds 0.35 MiB to a release executable (Skia: 3.16 MiB).
 - linesweeper is beta software (R10). The adapter keeps the spike's cases as a regression corpus, rerun on every upgrade, and the version is pinned.
-- Two coincident-curve cases produced a debris contour of about 10⁻⁸ unit²; the adapter filters such contours.
+- Two coincident-curve cases produced a debris contour of under 10⁻⁷ unit²; the adapter filters such contours.
+- The 0.1% area criterion is relative to the whole case, so it does not prove that thin features (slivers under 0.01 units) survive. The M1 regression test adds a local check for them.
 
 ## Alternatives considered
 

@@ -60,6 +60,8 @@ Components are not decomposed (only each glyph's own contours), and open contour
 
 Overlap left, mixed winding and area error count as failures above 0.1% of the input area.
 
+**Limit of the area metric.** The error is relative to the whole case, so it cannot see features that are small against it. The sliver cases (0.005–0.007 units wide, about 2 unit² each) and the tiny-contour grids would still pass at 0.1% if an engine deleted or filled their thin parts, and a real error under 0.1% of a glyph (e.g. a stem shifted by 0.5 units) passes too. The scanline step (about 0.12 units) is also coarser than the slivers. The results therefore prove correct contour directions and no gross geometry loss; they do not prove that thin features survive. Only the contour counts (e.g. `sliver-gap` keeps 2 contours) give partial evidence for slivers. The M1 regression test needs a stricter, local metric (absolute xor area per feature, or contour counts per case).
+
 Reproduce:
 
 ```bash
@@ -106,7 +108,7 @@ The *Errors* column counts engine calls that returned no path. No engine panicke
 
 **linesweeper:** none. Two quality defects that are not failures under the criteria:
 
-- `coincident-curves` (a circle drawn twice) and `circle-traced-twice` each produce one extra debris contour of about 10⁻⁸ unit² next to the real outline. A font would need it removed.
+- `coincident-curves` (a circle drawn twice) and `circle-traced-twice` each produce one extra debris contour of under 10⁻⁷ unit² (about 0.0095 × 5·10⁻⁸ units) next to the real outline. A font would need it removed.
 - `tiny-circles-200` (25 tiny contours) and `tiny-squares-200` (92) contain small contours, but these are real holes between the shapes: Skia returns the same 92 for the squares.
 
 **skia-pathops** (`simplify` + `as_winding`), 27 failing cases:
@@ -162,7 +164,7 @@ Prebuilt Skia binaries for `aarch64-pc-windows-msvc` exist for skia-safe 0.153.3
 
 Reasons:
 
-1. **Correct on every case.** 0 crashes, 0 errors, 0 validity failures and a worst area error of 0.0017% on 581 cases, with contour directions right for the non-zero rule. Skia PathOps, used through its public API, failed 27 cases: 6 errors and 21 contour-direction failures, 14 of which fill counters (area errors up to 346%).
+1. **Correct on every case.** 0 crashes, 0 errors, 0 validity failures and a worst area error of 0.0017% on 581 cases, with contour directions right for the non-zero rule (within the limit of the area metric stated under *Method*: thin slivers are not proven). Skia PathOps, used through its public API, failed 27 cases: 6 errors and 21 contour-direction failures, 14 of which fill counters (area errors up to 346%).
 2. **No native build and no extra license work.** linesweeper is pure Rust under MIT OR Apache-2.0. Skia needs prebuilt binaries tied to a feature set that bundles libpng and libjpeg-turbo, whose licenses are not on the allow-list, plus f32 coordinates.
 3. **The cost is speed.** linesweeper is about 3× slower (1.6 ms per glyph against 0.6 ms on Source Sans). That is acceptable for export and for an explicit "remove overlap" command, and glyphs can run in parallel. It is not fast enough for live previews of large glyph sets on every keystroke; nothing in M0–M2 needs that.
 
@@ -175,8 +177,8 @@ Conditions for the adapter (M1):
 
 ## Follow-ups
 
-- **M1 (`tf-geometry` port, adapter crate).** Implement `BooleanEngine` on linesweeper `=0.4.0` with the debris filter above; property tests for area invariants (§5.2); port the scanline reference as the test oracle.
+- **M1 (`tf-geometry` port, adapter crate).** Implement `BooleanEngine` on linesweeper `=0.4.0` with the debris filter above; property tests for area invariants (§5.2); port the scanline reference as the test oracle, adding a local check that thin features (the sliver cases) survive.
 - **M1.** Measure the other operations the parametric engine needs (intersection, difference, `binary_op` between two real shapes); this spike measured only remove-overlap.
 - **M1.** Decide how the UFO reader handles XML comments in `<outline>` (norad 0.18.4 rejects them) and whether the fixtures keep them. Check `quick-xml` RUSTSEC-2026-0194 and RUSTSEC-2026-0195 (via norad 0.18.4) before norad enters the root workspace; UFOs are untrusted input.
 - **M1.** Watch fontc PR #2070. If it merges, fontc and Typefaced use the same engine, and compile-time overlap removal can move to fontc.
-- **Step 12.** Add the spike commands above to `CLAUDE.md`, and record that ADR-0008 is Accepted.
+- **Step 12.** Add the spike commands above to `AGENTS.md` (which `CLAUDE.md` imports), and record that ADR-0008 is Accepted.
