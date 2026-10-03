@@ -219,6 +219,8 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   └── template.md
 │   ├── spikes/
 │   │   ├── spike-1-fontc.md
+│   │   ├── spike-2-cff.md
+│   │   ├── spike-2-fontview-inria-sans.png
 │   │   ├── spike-5-boolean.md
 │   │   └── spike-6-collections.md
 │   ├── implementation-plan.md
