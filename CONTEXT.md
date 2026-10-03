@@ -35,6 +35,7 @@ and version over typed IPC. The status of each step is in the table at the top o
 | Current work and what is left | `plans/` (status table) |
 | IPC command types | `crates/tf-commands/src/lib.rs` → `packages/bindings/src/index.ts` |
 | Compiling a UFO or designspace to TTF | `crates/tf-compile/src/lib.rs` |
+| Writing a `CFF ` table from cubic outlines | `crates/tf-cff/src/lib.rs` |
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
 | UI code | `apps/desktop/src/` |
 | Repository gates (layering, licenses, coverage, corpus) | `xtask/src/` |
@@ -56,6 +57,9 @@ and version over typed IPC. The status of each step is in the table at the top o
 | `apps/desktop/src-tauri/icons/` | [CONTEXT.md](apps/desktop/src-tauri/icons/CONTEXT.md) | App icons for the bundle |
 | `apps/desktop/src-tauri/src/` | [CONTEXT.md](apps/desktop/src-tauri/src/CONTEXT.md) | Tauri entry point and IPC registration |
 | `crates/` | [CONTEXT.md](crates/CONTEXT.md) | Rust library crates of the engine |
+| `crates/tf-cff/` | [CONTEXT.md](crates/tf-cff/CONTEXT.md) | CFF writer crate (domain layer): cubic outlines to a `CFF ` table |
+| `crates/tf-cff/src/` | [CONTEXT.md](crates/tf-cff/src/CONTEXT.md) | Builder, charstring encoder, byte encodings |
+| `crates/tf-cff/tests/` | [CONTEXT.md](crates/tf-cff/tests/CONTEXT.md) | Tables built and read back with read-fonts and skrifa |
 | `crates/tf-commands/` | [CONTEXT.md](crates/tf-commands/CONTEXT.md) | Typed command catalog crate (application layer) |
 | `crates/tf-commands/src/` | [CONTEXT.md](crates/tf-commands/src/CONTEXT.md) | Command and payload types |
 | `crates/tf-compile/` | [CONTEXT.md](crates/tf-compile/CONTEXT.md) | Font compiler crate (adapter layer): UFO and designspace to TTF through fontc |
@@ -165,6 +169,13 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
 ├── crates/
+│   ├── tf-cff/
+│   │   ├── src/
+│   │   │   ├── encode.rs
+│   │   │   ├── lib.rs
+│   │   │   └── outline.rs
+│   │   ├── tests/read_back.rs
+│   │   └── Cargo.toml
 │   ├── tf-commands/
 │   │   ├── src/lib.rs
 │   │   └── Cargo.toml

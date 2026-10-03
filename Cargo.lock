@@ -3936,6 +3936,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tf-cff"
+version = "0.1.0"
+dependencies = [
+ "kurbo",
+ "read-fonts",
+ "skrifa",
+ "thiserror 2.0.21",
+ "write-fonts",
+]
+
+[[package]]
 name = "tf-commands"
 version = "0.1.0"
 dependencies = [
