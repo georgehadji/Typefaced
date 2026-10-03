@@ -2,8 +2,16 @@
 // Canvas2D and requestAnimationFrame, none of which jsdom provides, so this file is
 // excluded from unit-test coverage and validated by running `#/bench` (docs/spikes/spike-3-ipc.md).
 import { Channel, invoke } from "@tauri-apps/api/core";
-import initKernel, { hitTest, translatePoints } from "@typefaced/geometry-wasm";
-import { decodeHit, makeGlyph, OFF_CURVE, type PackedOutline } from "./outline";
+import { hitTest, translatePoints } from "@typefaced/geometry-wasm";
+import { loadKernel } from "./kernel";
+import {
+  decodeHit,
+  innerBox,
+  makeGlyph,
+  makeNestedGlyph,
+  OFF_CURVE,
+  type PackedOutline,
+} from "./outline";
 import { type Summary, summarize } from "./stats";
 
 /** One frame at 60 Hz, the budget for a drag frame and the lateness threshold for patches. */
@@ -56,7 +64,17 @@ export interface DragResult {
   longFrames: number;
 }
 
+/**
+ * What the hit test runs on, all 5,000 points:
+ * - `grid`: 50 contours of 100 points, bounding boxes apart (the best case: the hit test
+ *   skips about 49 of 50 contours by their box);
+ * - `nested2x2500` and `nested5x1000`: few large concentric contours, a pointer inside
+ *   every box (the worst case: nothing can be skipped by contour).
+ */
+export type HitLayout = "grid" | "nested2x2500" | "nested5x1000";
+
 export interface HitTestResult {
+  layout: HitLayout;
   calls: number;
   /** Hit radius in font units. */
   radius: number;
@@ -205,29 +223,36 @@ export async function benchPatchStream(
   };
 }
 
-let kernelReady: Promise<unknown> | undefined;
-
-/** Loads the WASM kernel once. */
-export function loadKernel(): Promise<unknown> {
-  kernelReady ??= initKernel();
-  return kernelReady;
+function hitGlyph(layout: HitLayout): PackedOutline {
+  switch (layout) {
+    case "grid":
+      return makeGlyph();
+    case "nested2x2500":
+      return makeNestedGlyph(2, 2500);
+    case "nested5x1000":
+      return makeNestedGlyph(5, 1000);
+  }
 }
 
 export async function benchHitTest(
   calls = 1000,
   radius = HIT_RADIUS,
+  layout: HitLayout = "grid",
 ): Promise<HitTestResult> {
   await loadKernel();
-  const glyph = makeGlyph();
-  // Deterministic positions spread over the glyph's bounding box.
+  const glyph = hitGlyph(layout);
+  // Deterministic positions: over the grid glyph's bounding box, or inside the innermost
+  // ring of a nested glyph (inside the box of every contour).
+  const { x0, y0, x1, y1 } =
+    layout === "grid" ? { x0: 0, y0: 0, x1: 900, y1: 800 } : innerBox(glyph);
   let seed = 1;
   const random = () => {
     seed = (seed * 16807) % 2147483647;
     return seed / 2147483647;
   };
   const positions = Array.from({ length: calls }, () => [
-    random() * 900,
-    random() * 800,
+    x0 + random() * (x1 - x0),
+    y0 + random() * (y1 - y0),
   ]);
   const perCall: number[] = [];
   const hits = { point: 0, segment: 0, none: 0 };
@@ -241,6 +266,7 @@ export async function benchHitTest(
     hits[hit?.kind ?? "none"]++;
   }
   return {
+    layout,
     calls,
     radius,
     perCall: summarize(perCall),

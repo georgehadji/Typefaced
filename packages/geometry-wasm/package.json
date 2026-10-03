@@ -8,7 +8,8 @@
     ".": {
       "types": "./pkg/tf_wasm.d.ts",
       "default": "./pkg/tf_wasm.js"
-    }
+    },
+    "./wasm": "./pkg/tf_wasm_bg.wasm"
   },
   "types": "./pkg/tf_wasm.d.ts"
 }

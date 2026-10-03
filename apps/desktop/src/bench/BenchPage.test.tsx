@@ -44,6 +44,11 @@ describe("BenchPage", () => {
     expect(runners.benchPatchStream).toHaveBeenCalledWith(1);
     expect(runners.benchPatchStream).toHaveBeenCalledWith(5000);
     expect(runners.benchHitTest).toHaveBeenCalledWith(1000, 1);
+    // The worst case for the hit test: few large nested contours, at both radii.
+    for (const layout of ["nested2x2500", "nested5x1000"]) {
+      expect(runners.benchHitTest).toHaveBeenCalledWith(1000, 8, layout);
+      expect(runners.benchHitTest).toHaveBeenCalledWith(1000, 1, layout);
+    }
     for (const mode of ["compute", "rebuild", "cached"]) {
       expect(runners.benchDrag).toHaveBeenCalledWith(
         expect.any(HTMLCanvasElement),
@@ -58,6 +63,10 @@ describe("BenchPage", () => {
         stream: { small: { points: 1 }, large: { points: 5000 } },
         hitTest: { hit: 1 },
         hitTestSegments: { hit: 1 },
+        hitTestWorstCase: {
+          nested2x2500: { radius8: { hit: 1 }, radius1: { hit: 1 } },
+          nested5x1000: { radius8: { hit: 1 }, radius1: { hit: 1 } },
+        },
         frameBaseline: { raf: 1 },
         drag: {
           compute: { mode: "compute" },

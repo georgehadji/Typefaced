@@ -129,6 +129,8 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   │   ├── BenchPage.test.tsx
 │   │   │   ├── BenchPage.tsx
 │   │   │   ├── bench.css
+│   │   │   ├── kernel.test.ts
+│   │   │   ├── kernel.ts
 │   │   │   ├── outline.test.ts
 │   │   │   ├── outline.ts
 │   │   │   ├── runners.ts

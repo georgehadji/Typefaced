@@ -8,7 +8,7 @@ The desktop app package `@typefaced/desktop`: the React UI (`src/`) and the Taur
 |---|---|
 | `package.json` | Package manifest: React 19, the workspace bindings and WASM geometry packages, Vite, Vitest, Testing Library, Tauri CLI. Scripts: `dev`, `build` (`tsc && vite build`), `tauri`, `typecheck`, `test`, `test:ci` (with coverage) |
 | `index.html` | HTML entry page; mounts `#root` and loads `src/main.tsx` |
-| `vite.config.ts` | Vite config for Tauri (fixed port 1420, ignores `src-tauri`) and the Vitest config (jsdom, v8 coverage of `src/` with 80% thresholds; the entry point, the test files and the benchmark runners are excluded) |
+| `vite.config.ts` | Vite config for Tauri (fixed port 1420, ignores `src-tauri`, treats `.wasm` as an asset so the kernel can be inlined) and the Vitest config (jsdom, v8 coverage of `src/` with 80% thresholds; the entry point, the test files and the benchmark runners are excluded) |
 | `tsconfig.json` | TypeScript config for the browser code in `src/` (strict, no Node types) |
 | `tsconfig.node.json` | TypeScript config for `vite.config.ts` (Node types) |
 | `.gitignore` | Ignores logs, `node_modules`, `dist` and editor files |

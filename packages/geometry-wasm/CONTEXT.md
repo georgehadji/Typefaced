@@ -6,5 +6,5 @@ before the frontend. Up: [packages/CONTEXT.md](../CONTEXT.md).
 
 | File | What it does |
 |---|---|
-| `package.json` | Package manifest: exports `pkg/tf_wasm.js` and its types |
+| `package.json` | Package manifest: exports `pkg/tf_wasm.js` with its types, and the module file `pkg/tf_wasm_bg.wasm` as `./wasm` (imported with `?inline` so the kernel loads without `fetch`) |
 | `.gitignore` | Ignores the generated `pkg/` |

@@ -8,6 +8,10 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   plugins: [react()],
 
+  // The WASM kernel is imported with `?inline` (a data URL), which needs .wasm to be an
+  // asset: see src/bench/kernel.ts.
+  assetsInclude: ["**/*.wasm"],
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

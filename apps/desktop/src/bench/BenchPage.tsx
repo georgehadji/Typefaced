@@ -7,6 +7,7 @@ import {
   benchHitTest,
   benchPatchStream,
   benchPing,
+  type HitLayout,
 } from "./runners";
 import "./bench.css";
 
@@ -62,6 +63,19 @@ export default function BenchPage() {
       );
       const hitTest = await benchHitTest();
       const hitTestSegments = await benchHitTest(1000, 1);
+      step(
+        "hit test, worst case: few large nested contours (2 x 2,500 and 5 x 1,000 points)…",
+      );
+      const hitTestWorstCase = {} as Record<
+        HitLayout,
+        { radius8: unknown; radius1: unknown }
+      >;
+      for (const layout of ["nested2x2500", "nested5x1000"] as const) {
+        hitTestWorstCase[layout] = {
+          radius8: await benchHitTest(1000, 8, layout),
+          radius1: await benchHitTest(1000, 1, layout),
+        };
+      }
       step("empty animation frames (3 s)…");
       const frameBaseline = await benchFrameBaseline();
       step("drag, hit test and translate only (10 s)…");
@@ -78,6 +92,7 @@ export default function BenchPage() {
         stream: { small: streamSmall, large: streamLarge },
         hitTest,
         hitTestSegments,
+        hitTestWorstCase,
         frameBaseline,
         drag: { compute, rebuild, cached },
       };

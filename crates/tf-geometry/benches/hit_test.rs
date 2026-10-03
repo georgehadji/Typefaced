@@ -1,9 +1,15 @@
-//! Headless timing of `hit_test` and `translate_points` on the 5,000-point glyph of the
-//! M0 Step 8 budgets (hit-test under 1 ms, implementation plan §7.3).
+//! Headless timing of `hit_test` and `translate_points` on 5,000-point glyphs, for the
+//! M0 Step 8 budget (hit-test under 1 ms, implementation plan §7.3).
 //!
-//! The glyph is the same synthetic one as `makeGlyph()` in `apps/desktop/src/bench/outline.ts`:
-//! 50 contours of 100 points, each one line point followed by cubic segments. Run with
-//! `cargo bench -p tf-geometry`; it prints one line per case and needs no extra dependencies.
+//! Three glyph layouts, mirrored by `makeGlyph` and `makeNestedGlyph` in
+//! `apps/desktop/src/bench/outline.ts`:
+//! - grid: 50 contours of 100 points whose bounding boxes are apart. The best case: the hit
+//!   test skips about 49 of 50 contours by their box;
+//! - nested 2 x 2,500 and nested 5 x 1,000: few large concentric contours with the pointer
+//!   inside every box. The worst case: no contour can be skipped.
+//!
+//! Run with `cargo bench -p tf-geometry`; it prints one line per case and needs no extra
+//! dependencies.
 
 use std::f64::consts::TAU;
 use std::hint::black_box;
@@ -11,8 +17,6 @@ use std::time::Instant;
 
 use tf_geometry::{flags, hit_test, translate_points};
 
-const CONTOURS: usize = 50;
-const POINTS_PER_CONTOUR: usize = 100;
 const CALLS: usize = 2_000;
 const HIT_RADIUS: f64 = 8.0;
 
@@ -22,19 +26,31 @@ struct Glyph {
     contour_ends: Vec<u32>,
 }
 
-fn make_glyph() -> Glyph {
-    let total = CONTOURS * POINTS_PER_CONTOUR;
-    let columns = (CONTOURS as f64).sqrt().ceil() as usize;
+/// A box in font units.
+struct Area {
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+}
+
+/// `contours` wavy rings of `points_per_contour` points: one line point, then cubic segments
+/// (off, off, curve). `place(c)` gives the centre and base radius of contour `c`.
+fn build_rings(
+    contours: usize,
+    points_per_contour: usize,
+    place: impl Fn(usize) -> (f64, f64, f64),
+) -> Glyph {
+    let total = contours * points_per_contour;
     let mut coords = Vec::with_capacity(2 * total);
     let mut point_flags = Vec::with_capacity(total);
-    let mut contour_ends = Vec::with_capacity(CONTOURS);
-    for c in 0..CONTOURS {
-        let cx = 60.0 + (c % columns) as f64 * 110.0;
-        let cy = 60.0 + (c / columns) as f64 * 110.0;
-        for i in 0..POINTS_PER_CONTOUR {
-            let angle = TAU * i as f64 / POINTS_PER_CONTOUR as f64;
+    let mut contour_ends = Vec::with_capacity(contours);
+    for c in 0..contours {
+        let (cx, cy, base) = place(c);
+        for i in 0..points_per_contour {
+            let angle = TAU * i as f64 / points_per_contour as f64;
             let is_on = i % 3 == 0;
-            let radius = (if is_on { 45.0 } else { 50.0 }) + 3.0 * (7.0 * angle).sin();
+            let radius = base + if is_on { -2.5 } else { 2.5 } + 3.0 * (7.0 * angle).sin();
             coords.push(cx + radius * angle.cos());
             coords.push(cy + radius * angle.sin());
             point_flags.push(match (i, is_on) {
@@ -43,7 +59,7 @@ fn make_glyph() -> Glyph {
                 _ => flags::OFF_CURVE,
             });
         }
-        contour_ends.push(((c + 1) * POINTS_PER_CONTOUR - 1) as u32);
+        contour_ends.push(((c + 1) * points_per_contour - 1) as u32);
     }
     Glyph {
         coords,
@@ -52,15 +68,78 @@ fn make_glyph() -> Glyph {
     }
 }
 
-/// Deterministic positions over the glyph's bounding box (Park-Miller, like the page).
-fn positions(count: usize) -> Vec<(f64, f64)> {
+/// 50 contours of 100 points on a grid, bounding boxes apart.
+fn make_grid_glyph() -> Glyph {
+    let columns = 8; // ceil(sqrt(50))
+    build_rings(50, 100, |c| {
+        (
+            60.0 + (c % columns) as f64 * 110.0,
+            60.0 + (c / columns) as f64 * 110.0,
+            47.5,
+        )
+    })
+}
+
+/// `contours` concentric rings; the outermost has about 3 units between points.
+fn make_nested_glyph(contours: usize, points_per_contour: usize) -> Glyph {
+    let outer = points_per_contour as f64 / 2.0;
+    build_rings(contours, points_per_contour, |c| {
+        (
+            outer + 60.0,
+            outer + 60.0,
+            outer * (contours - c) as f64 / contours as f64,
+        )
+    })
+}
+
+/// The intersection of the bounding boxes of all contours: for a nested glyph, the box of
+/// the innermost ring.
+fn inner_box(glyph: &Glyph) -> Area {
+    let mut result = Area {
+        x0: f64::NEG_INFINITY,
+        y0: f64::NEG_INFINITY,
+        x1: f64::INFINITY,
+        y1: f64::INFINITY,
+    };
+    let mut first = 0usize;
+    for &last in &glyph.contour_ends {
+        let last = last as usize;
+        let (mut x0, mut y0, mut x1, mut y1) = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
+        let (pairs, _) = glyph.coords[2 * first..2 * (last + 1)].as_chunks::<2>();
+        for [x, y] in pairs {
+            x0 = x0.min(*x);
+            x1 = x1.max(*x);
+            y0 = y0.min(*y);
+            y1 = y1.max(*y);
+        }
+        result.x0 = result.x0.max(x0);
+        result.y0 = result.y0.max(y0);
+        result.x1 = result.x1.min(x1);
+        result.y1 = result.y1.min(y1);
+        first = last + 1;
+    }
+    result
+}
+
+/// Deterministic positions inside `area` (Park-Miller, like the page).
+fn positions(count: usize, area: &Area) -> Vec<(f64, f64)> {
     let mut seed = 1u64;
     let mut next = move || {
         seed = seed * 16_807 % 2_147_483_647;
         seed as f64 / 2_147_483_647.0
     };
     (0..count)
-        .map(|_| (next() * 900.0, next() * 800.0))
+        .map(|_| {
+            (
+                area.x0 + next() * (area.x1 - area.x0),
+                area.y0 + next() * (area.y1 - area.y0),
+            )
+        })
         .collect()
 }
 
@@ -82,14 +161,13 @@ fn report(name: &str, mut samples_ms: Vec<f64>) {
     );
 }
 
-fn main() {
-    let glyph = make_glyph();
-    let spots = positions(CALLS);
+/// Times `hit_test` at radius 8 and radius 1 over `spots` on `glyph`.
+fn bench_hit_test(label: &str, glyph: &Glyph, spots: &[(f64, f64)]) {
     // Radius 8 mostly finds points (they are about 3 units apart); radius 1 finds segments.
     for radius in [HIT_RADIUS, 1.0] {
         let (mut points, mut segments, mut nothing) = (0, 0, 0);
-        let mut samples = Vec::with_capacity(CALLS);
-        for &(x, y) in &spots {
+        let mut samples = Vec::with_capacity(spots.len());
+        for &(x, y) in spots {
             let start = Instant::now();
             let hit = hit_test(
                 black_box(&glyph.coords),
@@ -106,10 +184,35 @@ fn main() {
                 None => nothing += 1,
             }
         }
-        println!("radius {radius}: {points} points, {segments} segments, {nothing} misses");
-        report(
-            &format!("hit_test, radius {radius} (5,000 points, 50 contours)"),
-            samples,
+        println!(
+            "{label}, radius {radius}: {points} points, {segments} segments, {nothing} misses"
+        );
+        report(&format!("hit_test, {label}, radius {radius}"), samples);
+    }
+}
+
+fn main() {
+    let glyph = make_grid_glyph();
+    let everywhere = Area {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 900.0,
+        y1: 800.0,
+    };
+    bench_hit_test(
+        "grid 50 x 100 (best case)",
+        &glyph,
+        &positions(CALLS, &everywhere),
+    );
+
+    // The worst case: the pointer is inside the box of every contour.
+    for (contours, points) in [(2, 2500), (5, 1000)] {
+        let nested = make_nested_glyph(contours, points);
+        let spots = positions(CALLS, &inner_box(&nested));
+        bench_hit_test(
+            &format!("nested {contours} x {points} (worst case)"),
+            &nested,
+            &spots,
         );
     }
 
@@ -129,7 +232,7 @@ fn main() {
             start.elapsed().as_secs_f64() * 1000.0
         })
         .collect();
-    report("hit_test (one crowded spot)", crowded);
+    report("hit_test (grid, one crowded spot)", crowded);
 
     let selection: Vec<u32> = (0..1000).collect();
     let moved: Vec<f64> = (0..CALLS)
