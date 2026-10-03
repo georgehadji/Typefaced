@@ -2,7 +2,7 @@
 
 Tests [ADR-0002](../adr/0002-rust-engine-owns-document-state.md) and [ADR-0013](../adr/0013-ui-stack-react-zustand-canvas2d-wasm.md). Plan: [M0 Step 8](../../plans/typefaced-m0-foundations-and-spikes.md). Code: [`crates/tf-geometry`](../../crates/tf-geometry/), [`crates/tf-wasm`](../../crates/tf-wasm/), [`packages/geometry-wasm`](../../packages/geometry-wasm/), [`apps/desktop/src-tauri/src/bench.rs`](../../apps/desktop/src-tauri/src/bench.rs), [`apps/desktop/src/bench/`](../../apps/desktop/src/bench/).
 
-**Verdict in one line.** The hit-test budget holds. The binary payload format wins clearly above 100 points. The commit round-trip budget (p95 under 8 ms) and the drag frame budget (p95 under 16 ms) are **not met on this machine, and no payload format or drawing change measured here fixes that**. Both ADRs stay Proposed and carry an amendment. The step's exit criteria are not met, so the step is not marked done.
+**Verdict in one line.** The hit test is fast on a typical layout (p95 about 0.3 ms in the WebView) but its **worst case, few large nested contours, is not shown to meet the 1 ms budget**: under Node it sits at the edge (p95 0.53 to 1.00 ms) and the WebView run of that case is still to be done. The binary payload format wins clearly above 100 points. The commit round-trip budget (p95 under 8 ms) and the drag frame budget (p95 under 16 ms) are **not met on this machine, and no payload format or drawing change measured here fixes that**. Both ADRs stay Proposed and carry an amendment. The step's exit criteria are not met, so the step is not marked done.
 
 ## Question
 
@@ -28,6 +28,7 @@ Do the budgets of implementation plan §10.4 and §7.3 hold on this Windows mach
 ## Method
 
 - **Glyph.** A synthetic glyph of 50 contours × 100 points = 5,000 points (`makeGlyph` in `outline.ts`, mirrored by `benches/hit_test.rs`). Each contour is a wavy ring: one line point, then cubic segments (off, off, curve). Points are about 3 font units apart. The packed layout is the §7.2 one: `Float64Array` coordinates, `Uint8Array` flags, `Uint32Array` contour ends.
+- **Worst-case glyph.** The grid glyph is the best case for a hit test: its 50 contours have disjoint bounding boxes, so the per-contour box check skips about 49 of 50 contours. The worst case is a glyph of few large concentric contours (the counters of an "8", a target) with the pointer inside the box of every contour, so nothing is skipped. `makeNestedGlyph` builds two of them, both of 5,000 points: 2 contours × 2,500 points and 5 contours × 1,000 points. The outermost ring has about 3 units between points like the grid glyph, the radii shrink in equal steps, and the 1,000 (in-app) or 2,000 (native) positions are uniform inside the innermost ring's bounding box. The native bench and the in-app runner build the same glyphs.
 - **Hit test.** `hit_test` finds the nearest point within the radius, otherwise the nearest segment (kurbo `nearest`), across all contours. Two radii: 8 units (mostly point hits) and 1 unit (finds segments). 1,000 deterministic positions over the glyph's bounding box in-app, 2,000 natively.
 - **Empty round trip.** 1,000 `invoke` calls of a command that returns an empty body, once handled on the main thread and once on the async runtime.
 - **Commit round trip.** 1,000 calls (after 20 warm-up calls) per payload format and size. An edit of 1, 100, 1,000 or 5,000 points goes to Rust, which swaps in a new `Arc` and returns a patch of the same size. JSON: edit as a JSON array, patch as a JSON string. Binary: edit as a raw body of little-endian `f64`, patch as raw bytes (16-byte header, then coordinates). The timer covers building the payload, the call, and turning the answer into a `Float64Array`. The plan asks for the 5,000-point size; the smaller sizes were added to separate the fixed cost of a call from the cost of the payload.
@@ -41,7 +42,7 @@ Do the budgets of implementation plan §10.4 and §7.3 hold on this Windows mach
 
 | Criterion | Budget | Measured | Result |
 |---|---|---|---|
-| Hit-test, all contours of the 5,000-point glyph | under 1 ms | WASM in the WebView: p95 0.4 / 0.4 / 0.8 ms (radius 8), 0.3 / 0.3 / 0.4 ms (radius 1); WASM under Node: p95 0.31 to 0.51 ms; native: p95 0.07 to 0.11 ms | **Met** |
+| Hit-test, all contours of the 5,000-point glyph | under 1 ms | **Grid layout (best case, contours skipped by box):** WASM in the WebView p95 0.4 / 0.4 / 0.8 ms (radius 8), 0.3 / 0.3 / 0.4 ms (radius 1); WASM under Node p95 0.30 to 0.38 ms; native p95 0.07 to 0.23 ms. **Nested layouts (worst case, no contour skipped):** WASM under Node p95 0.53 to 1.00 ms (p99 up to 1.56 ms); native p95 0.49 to 0.63 ms (max up to 2.3 ms); **WebView: not yet measured** (the in-app benchmark now runs it) | **Met for the grid layout. Not shown for the worst case**: it is at the budget under Node, and the WebView is not expected to be faster, so it may exceed 1 ms |
 | Commit round trip, p95, better format (binary) | under 8 ms | 5,000 points: 24.4 / 22.5 / 25.0 ms. Even 1 point: 11.8 / 9.4 / 10.2 ms. An empty command: 9.5 to 11.5 ms | **Not met** |
 | Drag frame time, p95 | under 16 ms | Empty animation frames already give p95 18.3 to 18.5 ms here. `cached`: 53.6 to 56.8 ms. `rebuild`: 53.8 to 73.3 ms | **Not met** (see below) |
 | Numbers and chosen payload format recorded | | This report; binary | Done |
@@ -86,10 +87,20 @@ Small patches stream well (about 1.5 ms one way). Whole-glyph patches at 60 Hz a
 | `translate_points`, 1,000 of 5,000 selected, native | 0.23 to 0.25 ms | 0.32 to 0.41 ms | 0.36 to 0.53 ms |
 | WASM `hitTest` under Node, radius 8 | 0.18 ms | 0.31 to 0.51 ms | 0.40 to 0.89 ms |
 | WASM `translatePoints` under Node | 0.22 ms | 0.33 to 0.34 ms | 0.45 to 0.70 ms |
+| `hit_test`, grid 50 × 100 (best case), radius 8 / 1, native (3 runs) | 0.078 to 0.084 ms | 0.099 to 0.172 ms | 0.145 to 0.347 ms |
+| `hit_test`, nested 2 × 2,500 (worst case), radius 8 / 1, native (3 runs) | 0.32 to 0.48 ms | 0.51 to 0.62 ms | 0.63 to 0.99 ms |
+| `hit_test`, nested 5 × 1,000 (worst case), radius 8 / 1, native (3 runs) | 0.31 to 0.43 ms | 0.49 to 0.63 ms | 0.58 to 0.88 ms |
+| WASM `hitTest` under Node, grid, radius 8 / 1 (3 runs) | 0.19 to 0.22 ms | 0.30 to 0.38 ms | 0.36 to 0.54 ms |
+| WASM `hitTest` under Node, nested 2 × 2,500, radius 8 / 1 (3 runs) | 0.47 to 0.48 ms | 0.79 to 1.00 ms | 0.89 to 1.56 ms |
+| WASM `hitTest` under Node, nested 5 × 1,000, radius 8 / 1 (3 runs) | 0.47 to 0.48 ms | 0.53 to 0.94 ms | 0.73 to 1.23 ms |
+
+The rows with ranges above give the lowest and highest of the six numbers (two radii × three runs). The worst-case rows were measured while other agent sessions kept the machine busy (the CPU counter read 32% to 100% around these runs), so their tails are pessimistic; the single slowest call in a run reached 1.0 to 2.3 ms natively. The WASM-under-Node numbers come from a throwaway script that imports `makeGlyph`, `makeNestedGlyph` and `innerBox` from `outline.ts` and times 2,000 `hitTest` calls after 200 warm-up calls; it is not kept in the repository. The in-app numbers for these layouts are in `hitTestWorstCase` of the results JSON and were not yet measured when this was written.
 
 The native `translate_points` time is dominated by allocating and filling the 80 KB copy, which is noisy on this machine (the same copy ranged from 15 µs to 300 µs in a separate probe). Under WASM both calls also copy the arrays into and out of WASM memory.
 
 Two changes made the hit test fast enough to have margin. The first version built a `Vec` of all 1,700 segments per call and measured 0.42 to 0.53 ms at p50 (p95 about 0.9 ms, close to the budget). Visiting segments without allocating, and skipping contours whose bounding box is out of reach, brought it to 0.055 ms at p50. The property tests that compare `hit_test` against a brute-force search still pass.
+
+That speed depends on the layout. Culling by contour box only helps when the pointer is outside most boxes. On the nested glyphs every box contains the pointer, so every segment is visited and the hit test costs three to five times more (native p50 0.32 to 0.48 ms against 0.08 ms; under Node p50 0.47 ms against 0.19 ms). A reviewer's separate native measurements agree (50 × 100 grid p95 0.134 ms; 2 × 2,500 nested p95 0.368 ms; 5 × 1,000 nested p95 0.32 to 0.40 ms). Real glyphs are likely between the two: most letters have one to three contours, nested or side by side.
 
 ### Drag (760×760 canvas, 10 s each)
 
@@ -111,20 +122,21 @@ What this shows and what it does not:
 ## Decision
 
 1. **Payload format: binary.** Raw request bodies and `tauri::ipc::Response` bytes, with typed arrays in the packed layout, are mandatory for outline data. JSON is acceptable for commands carrying under about 100 values.
-2. **Hit-test budget: met.** The WASM kernel stays.
-3. **Commit round trip: budget not met, and it cannot be met by changing the payload here.** The fixed cost of one `invoke` is about 7 ms at p50 and 10 ms at p95 on this machine, before any data moves. Mitigations, now written into ADR-0002:
+2. **Hit-test budget: met on a typical layout, not shown for the worst case.** The WASM kernel stays. Its cost depends on the layout: culling by contour bounding box makes the grid glyph cheap (WebView p95 0.3 to 0.8 ms) and does nothing for few large nested contours, where it is about 0.5 ms at p50 and up to 1.0 ms at p95 under Node. The in-app WebView number for the worst case is the first thing to read from the next run. If it is over 1 ms the options are a spatial index per glyph revision, or testing segments by their own control box before building them; neither is needed until a measurement asks for it.
+3. **Commit round trip: budget not met, and it cannot be met by changing the payload here.** The fixed cost of one `invoke` is about 7 ms at p50 and 10 ms at p95 on this machine, before any data moves. Mitigations:
    - A commit is asynchronous. The UI keeps its transient state until the patch arrives and never blocks on the round trip.
    - Commits and patches carry only the touched points, not whole outlines. At 100 points binary p95 is 10.4 to 11.7 ms, within about 1.5 ms of the floor.
-   - The 8 ms budget is re-stated to name what it measures, and re-measured on other hardware before the ADR is accepted (see *Follow-ups*).
+   - The 8 ms budget needs to be re-stated to name what it measures, and re-measured on other hardware (see *Follow-ups*). This is a proposal: the ADR-0002 amendment says the budget failed and suggests the restatement, but its text is unchanged. The first two mitigations are recorded in the ADR-0002 amendment.
 4. **Drag frame budget: not demonstrated.** What is shown: kernel cost is negligible, and `Path2D` caching is required. What is not shown: that a drag reaches the display's cadence in this WebView. ADR-0013 records this as open.
 5. **ADR status.** ADR-0002 and ADR-0013 stay **Proposed**. They get an amendment section with the findings above. They become Accepted when the manual run below shows the commit round trip and drag frame time within budget on hardware where an empty frame loop runs at 16.7 ms, or when the budgets are formally re-stated. The plan's fallback ("move drag state further into the UI") already describes the architecture, so no structural change is proposed.
+6. **Kernel loading and the CSP.** The first bench run loaded the module with wasm-bindgen's default, `fetch('tf_wasm_bg.wasm')`, against the Vite dev server, where the shipped CSP does not apply. In the shipped build `fetch` is governed by `connect-src`, which is `ipc: http://ipc.localhost` and has no `'self'`, so the same call would have been blocked. The Tauri CSP guide says Tauri adds nonces and hashes to the script and style directives at compile time; it does not say Tauri adds anything to `connect-src`, and the guide and the configuration reference say nothing on devUrl or `devCsp`. Rather than add a `connect-src` source on an assumption, kernel loading no longer needs the network: `apps/desktop/src/bench/kernel.ts` imports the module as a base64 data URL (`@typefaced/geometry-wasm/wasm?inline`, with `assetsInclude: ["**/*.wasm"]` in `vite.config.ts`), decodes it and passes the bytes to `init({ module_or_path })`. Compiling those bytes needs only `script-src 'wasm-unsafe-eval'`, which is set, and the CSP is unchanged. A unit test loads the kernel this way with `fetch` spied on and runs a hit test. **Not verified:** a run inside the WebView under the bundled app's CSP. The `#/bench` route exists only in the dev frontend, so that check waits for the first real consumer of the kernel (M4). The inlined module adds about 49 KB of base64 to the JS chunk that imports it.
 
 ## Reproduce
 
 ```bash
 cargo test -p tf-geometry                    # unit and property tests
 cargo bench -p tf-geometry --bench hit_test  # native hit test and translate timings
-wasm-pack build crates/tf-wasm --target web --out-dir ../../packages/geometry-wasm/pkg
+wasm-pack build crates/tf-wasm --target web --out-dir ../../packages/geometry-wasm/pkg -- --locked
 pnpm --filter @typefaced/desktop build       # needed before any cargo command on the desktop crate
 cargo test -p typefaced-desktop --features bench bench::
 ```
@@ -136,7 +148,7 @@ pnpm --filter @typefaced/desktop dev                 # leave running: serves #/b
 cargo build --release -p typefaced-desktop --features bench   # 15 to 35 min the first time
 $env:TYPEFACED_BENCH_EXIT = "1"                      # exit and write the results when done
 & .\target\release\typefaced-desktop.exe | Out-Null  # Out-Null makes PowerShell wait for the window app
-# results: target\bench-results.json; progress lines start with TYPEFACED_BENCH_LOG
+# results: target\bench-results.json (hit-test worst case: hitTestWorstCase); progress lines start with TYPEFACED_BENCH_LOG
 ```
 
 Or interactively: `pnpm --filter @typefaced/desktop tauri dev --features bench` (debug Rust, so the commit numbers will be worse). Never pass `bench` to `tauri build`.
@@ -144,6 +156,7 @@ Or interactively: `pnpm --filter @typefaced/desktop tauri dev --features bench` 
 ## Follow-ups
 
 - **Manual run on idle hardware (needed to accept the ADRs).** Close other programs, plug in the charger, keep the app window visible and in front, and run the in-app benchmark three times as above, on this machine and on at least one other Windows machine with a 60 Hz display. Check three things: (1) the empty round trip (`ping.main.p95`) and the 1-point commit p95 against the 8 ms budget; (2) `frameBaseline.p95` is about 16.7 ms, and `drag.cached.frameTime.p95` is within 2 ms of it; (3) the 5,000-point binary commit p95. If an idle machine still shows a 7 ms empty round trip, the commit budget must be re-stated (for example as "engine reducer + patch under 8 ms, UI never waits").
+- **Read the hit-test worst case first.** In `targetench-results.json`, `hitTestWorstCase.nested2x2500` and `.nested5x1000` (each with `radius8` and `radius1`) give `perCall.p95` in the WebView. Compare with `hitTest` and `hitTestSegments` (the grid layout). Over 1 ms at p95 means the hit test needs a spatial index per glyph revision or a cheaper segment pre-check, and ADR-0013 gets that follow-up.
 - Find out why drawing halves the frame rate: check whether Canvas2D is GPU-accelerated in this WebView2 (`chrome://gpu` equivalent through the remote-debugging port), and try the same page on the NVIDIA GPU.
 - Time the Rust side of a commit (decode, reducer, encode) separately, to show how much of the floor is the WebView2 custom-protocol call.
 - M4 (`@typefaced/canvas`): cache `Path2D` per glyph and revision, draw handles for the selection only, and add a frame-time regression test in the real WebView.
