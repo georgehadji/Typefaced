@@ -44,7 +44,7 @@ After that, M1 (headless engine) can start.
 | 8 | Spike 3 — IPC latency and WASM kernel (ADR-002, ADR-013) | 3.2, 4 | default | 2 d | TODO |
 | 9.1 | Spike 4a — AI egress host (Rust) | 8 | strongest | 1 d | TODO |
 | 9.2 | Spike 4b — AI client and tool runner (TypeScript) (ADR-009) | 9.1 | strongest | 1 d | TODO |
-| 10 | Spike 5 — boolean engine (ADR-008) | 4, 5 | default | 1.5 d | TODO |
+| 10 | Spike 5 — boolean engine (ADR-008) | 4, 5 | default | 1.5 d | DONE (#10) |
 | 11 | Spike 6 — persistent collections (ADR-017) | 4 | default | 1 d | DONE (#3) |
 | 12 | M0 exit review and handoff | all | strongest | 0.5 d | TODO |
 
