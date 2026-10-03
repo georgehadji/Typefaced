@@ -114,8 +114,9 @@ fn nearest_point(coords: &[f64], flags: &[u8], p: Point, radius: f64) -> Option<
     let mut best: Option<(usize, f64)> = None;
     for i in 0..point_count(coords, flags) {
         let d2 = (point_at(coords, i) - p).hypot2();
-        // `<=` keeps points exactly on the radius; NaN distances never compare true.
-        if d2 <= limit && best.is_none_or(|(_, b)| d2 < b) {
+        // `<=` keeps points exactly on the radius; NaN distances never compare true, and
+        // an infinite distance (an infinite coordinate) is rejected even for an infinite radius.
+        if d2 <= limit && d2.is_finite() && best.is_none_or(|(_, b)| d2 < b) {
             best = Some((i, d2));
         }
     }
@@ -428,6 +429,23 @@ mod tests {
         assert_eq!(hit_test(&c, &f, &e, 0.0, 0.0, -1.0), None);
         assert_eq!(hit_test(&c, &f, &e, 0.0, 0.0, f64::NAN), None);
         assert_eq!(hit_test(&c, &f, &e, f64::NAN, 0.0, 5.0), None);
+    }
+
+    #[test]
+    fn an_infinite_radius_never_reports_a_point_at_infinite_distance() {
+        let c = [f64::INFINITY, 0.0, 3.0, 4.0];
+        let f = [ON; 2];
+        assert_eq!(
+            hit_test(&c, &f, &[1], 0.0, 0.0, f64::INFINITY),
+            Some(Hit::Point {
+                index: 1,
+                distance: 5.0
+            })
+        );
+        assert_eq!(
+            hit_test(&c[..2], &f[..1], &[0], 0.0, 0.0, f64::INFINITY),
+            None
+        );
     }
 
     #[test]
