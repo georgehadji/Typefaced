@@ -11,6 +11,9 @@ const RRCURVETO: u8 = 8;
 const ENDCHAR: u8 = 14;
 const RMOVETO: u8 = 21;
 
+/// TN #5177 Appendix B: the longest charstring.
+const MAX_CHARSTRING_LEN: usize = 65_535;
+
 type IntPoint = (i64, i64);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -126,14 +129,14 @@ pub(crate) fn bounds(subpaths: &[Subpath]) -> Option<Bounds> {
         return None;
     }
     let rect = to_bez_path(subpaths).bounding_box();
-    let outward = |v: f64, round: fn(f64) -> f64| {
+    let outward = |v: f64, outward_fn: fn(f64) -> f64| {
         let nearest = v.round();
         // In i32 range: the points were checked when rounded, and a cubic stays
         // inside the hull of its control points.
         (if (v - nearest).abs() < SNAP {
             nearest
         } else {
-            round(v)
+            outward_fn(v)
         }) as i32
     };
     Some(Bounds {
@@ -177,6 +180,9 @@ pub(crate) fn charstring(
         }
     }
     out.push(ENDCHAR);
+    if out.len() > MAX_CHARSTRING_LEN {
+        return Err(OutlineError::TooLong(out.len()));
+    }
     Ok(out)
 }
 

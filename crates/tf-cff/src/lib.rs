@@ -23,6 +23,9 @@ const PRIVATE: &[u8] = &[18];
 const DEFAULT_WIDTH_X: &[u8] = &[20];
 const NOMINAL_WIDTH_X: &[u8] = &[21];
 
+/// The largest string ID (TN #5176 Table 2: SIDs are 0–64999).
+const MAX_SID: u16 = 64_999;
+
 /// Why a CFF table could not be built.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CffError {
@@ -42,8 +45,8 @@ pub enum CffError {
     InvalidUnitsPerEm(u16),
     #[error("{0} glyphs: CFF holds at most 65535")]
     TooManyGlyphs(usize),
-    /// Custom glyph names get string IDs 391–65535.
-    #[error("{0} custom glyph names: their string IDs would exceed 65535")]
+    /// Custom glyph names get string IDs 391–64999 (TN #5176 Table 2).
+    #[error("{0} custom glyph names: their string IDs would exceed 64999")]
     TooManyStrings(usize),
     #[error("the table is too large for CFF offsets")]
     IndexTooLarge,
@@ -63,6 +66,9 @@ pub enum OutlineError {
     /// A charstring number (coordinate delta or width delta) beyond 16 bits.
     #[error("{0} does not fit a 16-bit charstring number")]
     OutOfRange(i64),
+    /// TN #5177 Appendix B: a charstring holds at most 65535 bytes.
+    #[error("the charstring takes {0} bytes; CFF allows 65535")]
+    TooLong(usize),
 }
 
 /// Integer glyph bounds, as the font states them (`FontBBox`, and for the caller the
@@ -243,7 +249,11 @@ impl Strings {
                     first_custom + custom.len() - 1
                 }
             };
-            sids.push(u16::try_from(sid).map_err(|_| CffError::TooManyStrings(custom.len()))?);
+            let sid = u16::try_from(sid)
+                .ok()
+                .filter(|&sid| sid <= MAX_SID)
+                .ok_or(CffError::TooManyStrings(custom.len()))?;
+            sids.push(sid);
         }
         Ok(Self { sids, custom })
     }

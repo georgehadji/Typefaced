@@ -575,6 +575,24 @@ fn non_finite_coordinates_are_rejected() {
 }
 
 #[test]
+fn a_charstring_longer_than_65535_bytes_is_rejected() {
+    // TN #5177 Appendix B: a charstring holds at most 65535 bytes.
+    let mut path = BezPath::new();
+    path.move_to((0.0, 0.0));
+    for i in 1..=10_000 {
+        let v = if i % 2 == 1 { 2000.0 } else { 0.0 };
+        path.line_to((v, v));
+    }
+
+    // 0 0 rmoveto (3 bytes), 9999 lines of ±2000 ±2000 rlineto (7 bytes each; the
+    // last line returns to the start and is dropped), endchar (1 byte).
+    assert_eq!(
+        outline_error(&path),
+        glyph_error(OutlineError::TooLong(3 + 9999 * 7 + 1))
+    );
+}
+
+#[test]
 fn numbers_beyond_16_bits_are_rejected() {
     let mut path = BezPath::new();
     path.move_to((-20000.0, 0.0));
@@ -608,8 +626,9 @@ fn more_than_65535_glyphs_are_rejected() {
 }
 
 #[test]
-fn custom_names_beyond_sid_65535_are_rejected() {
-    // 391 standard strings: custom names may use SIDs 391..=65535, 65145 of them.
+fn custom_names_beyond_sid_64999_are_rejected() {
+    // TN #5176 Table 2: SIDs are 0–64999. With 391 standard strings, custom names may
+    // use SIDs 391..=64999, 64609 of them.
     let with_custom_names = |count: u32| {
         let mut builder = CffBuilder::new("F", 1000).glyph(".notdef", 0, &BezPath::new());
         for i in 0..count {
@@ -618,9 +637,9 @@ fn custom_names_beyond_sid_65535_are_rejected() {
         builder.build()
     };
 
-    assert!(with_custom_names(65145).is_ok());
+    assert!(with_custom_names(64609).is_ok());
     assert_eq!(
-        with_custom_names(65146).unwrap_err(),
-        CffError::TooManyStrings(65146)
+        with_custom_names(64610).err(),
+        Some(CffError::TooManyStrings(64610))
     );
 }
