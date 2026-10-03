@@ -2269,6 +2269,7 @@ dependencies = [
  "base64 0.22.1",
  "close_already",
  "indexmap 2.14.2",
+ "kurbo",
  "log",
  "plist",
  "quick-xml 0.38.4",
@@ -3936,6 +3937,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tf-cff"
+version = "0.1.0"
+dependencies = [
+ "kurbo",
+ "read-fonts",
+ "skrifa",
+ "thiserror 2.0.21",
+ "write-fonts",
+]
+
+[[package]]
 name = "tf-commands"
 version = "0.1.0"
 dependencies = [
@@ -3949,8 +3961,12 @@ name = "tf-compile"
 version = "0.1.0"
 dependencies = [
  "fontc",
+ "kurbo",
+ "norad",
  "skrifa",
+ "tf-cff",
  "thiserror 2.0.21",
+ "write-fonts",
 ]
 
 [[package]]

@@ -1,0 +1,25 @@
+[package]
+name = "tf-cff"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Minimal CFF (version 1) writer: cubic outlines in, a `CFF ` table out (ADR-0007)"
+
+[package.metadata.typefaced]
+layer = "domain"
+
+[dependencies]
+# Same exact versions as fontc 1.0.0's tree (tf-compile); upgrade them together.
+kurbo = "=0.13.1"
+# Only for the CFF standard strings table (TN #5176 Appendix A), through `ps::string::Sid`.
+read-fonts = "=0.43.3"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+skrifa = "=0.46.2"
+write-fonts = "=0.52.0"
+
+[lints]
+workspace = true
