@@ -1,5 +1,5 @@
 # ADR-0006: Compiler: fontc in-process; fontmake as oracle and contingency
-Status: Proposed · Date: 2026-09-29
+Status: Accepted · Date: 2026-10-03
 
 Source: [implementation plan](../implementation-plan.md) §0, §1 (D4), §3.3, §3.4, §5.10, §5.13, §10.4, §15 (R1); [research](../research.md) §5, §6.1; [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) Conventions, Step 6.
 
@@ -35,11 +35,14 @@ Source: [implementation plan](../implementation-plan.md) §0, §1 (D4), §3.3, �
 
 ## Validation
 
-**Validated by Step 6 — Spike 1: fontc as an in-process library.** Step 6 compiles the fixture UFO and two corpus families (one static, one variable), checks the outputs with `read-fonts`, `skrifa`, `ttx` and `ots-sanitize`, and measures build time, binary size and compile time.
+Validated by Step 6 — Spike 1 ([report](../spikes/spike-1-fontc.md)), with `tf-compile` calling fontc 1.0.0 in-process on Windows.
 
-Pass criteria (Step 6 exit criteria):
-- In-process compiles succeed for the fixture and both corpus families, and every output passes OTS.
-- Recorded: cold build time, binary size delta in MB, and median compile time for the static family. The budget in §10.4 is under 2 s at about 1,000 glyphs; if it's over, say by how much.
-- Unsupported designspace features are listed.
+- **Compiles.** The fixture and all 6 Inria Sans styles (static) compile, and every output passes OTS. The Source Sans 3 variable family does not compile as-is: its three masters have different `features.fea` files and fontc stops with `NonIdenticalFea`. With the feature files left out it compiles, with `wght` axis, `gvar`, `HVAR`, `MVAR`, `avar` and `STAT`.
+- **Measured** (machine saturated by other builds, so times are upper bounds): cold release build 42 min 54 s; binary size delta 14.4 MB; static compile median 0.99 s at 591 glyphs, about 1.7 s per 1,000 glyphs (budget: under 2 s).
+- **Unsupported designspace features:** discrete axes and instance locations in user coordinates panic; `<variable-fonts>`, avar2 mappings and axis labels are ignored; masters with different feature files fail. The report lists them with the error text.
 
-Step 6 sets this ADR to Accepted or Rejected. If it is rejected, the fallback is a fontmake sidecar behind the same port. That changes a stated product constraint (no Python at runtime, §3.3), so it needs the user's approval as an amendment to this ADR.
+Conditions that come with the decision:
+- The temporary designspace Typefaced writes for fontc uses designspace 4 features only, with one shared `features.fea` for all masters and no XML comments inside glyphs.
+- Every compile goes through `compile_to_ttf` (or the M2 port), which turns fontc panics into errors. This needs `panic = "unwind"` in the release profile.
+- Re-time the static family on an idle machine before M2 sets the export budget in CI: the margin under 2 s is about 15%.
+- `deny.toml` ignores RUSTSEC-2026-0194 and RUSTSEC-2026-0195 (quick-xml, through norad). Remove the ignores when norad moves to quick-xml 0.41 or later.

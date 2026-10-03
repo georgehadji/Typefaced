@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A designspace 5 discrete axis (no minimum or maximum): fontc 1.0.0 panics on it. -->
+<designspace format="5.0">
+  <axes>
+    <axis tag="ital" name="Italic" values="0 1" default="0"/>
+  </axes>
+  <sources>
+    <source filename="../../../../tests/fixtures/min.ufo" name="Upright">
+      <location>
+        <dimension name="Italic" xvalue="0"/>
+      </location>
+    </source>
+  </sources>
+</designspace>
