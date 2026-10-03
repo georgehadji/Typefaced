@@ -9,7 +9,7 @@ mod outline;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use kurbo::{BezPath, Rect, Shape};
+use kurbo::BezPath;
 use read_fonts::ps::string::Sid;
 
 use encode::{dict_int, dict_int32, dict_real, index};
@@ -65,11 +65,34 @@ pub enum OutlineError {
     OutOfRange(i64),
 }
 
-/// The outline exactly as [`CffBuilder`] encodes it: points rounded with `floor(v + 0.5)`,
-/// a final line back to a subpath's start dropped, subpaths without segments dropped,
-/// every subpath ending with `ClosePath`. Use it to compute bounds that match the font.
-pub fn cff_outline(path: &BezPath) -> Result<BezPath, OutlineError> {
-    outline::subpaths(path).map(|subpaths| outline::to_bez_path(&subpaths))
+/// Integer glyph bounds, as the font states them (`FontBBox`, and for the caller the
+/// `head`, `hmtx` and `hhea` values).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bounds {
+    pub x_min: i32,
+    pub y_min: i32,
+    pub x_max: i32,
+    pub y_max: i32,
+}
+
+impl Bounds {
+    /// The smallest bounds holding both.
+    pub fn union(self, other: Self) -> Self {
+        Self {
+            x_min: self.x_min.min(other.x_min),
+            y_min: self.y_min.min(other.y_min),
+            x_max: self.x_max.max(other.x_max),
+            y_max: self.y_max.max(other.y_max),
+        }
+    }
+}
+
+/// The bounds of `path` as [`CffBuilder`] encodes it (points rounded with
+/// `floor(v + 0.5)`, subpaths without segments left out): the exact curve extrema,
+/// rounded outwards, as fontTools computes them from a `CFF ` table. `None` when
+/// nothing is drawn.
+pub fn bounds(path: &BezPath) -> Result<Option<Bounds>, OutlineError> {
+    outline::subpaths(path).map(|subpaths| outline::bounds(&subpaths))
 }
 
 /// Builds a CFF table for one font from glyphs in glyph order.
@@ -131,15 +154,14 @@ impl CffBuilder {
         let strings = Strings::assign(&self.glyphs)?;
         let width = most_common_advance(&self.glyphs);
         let mut charstrings = Vec::with_capacity(self.glyphs.len());
-        let mut bbox: Option<Rect> = None;
+        let mut bbox: Option<Bounds> = None;
         for glyph in &self.glyphs {
             let error = |error| CffError::Glyph {
                 name: glyph.name.clone(),
                 error,
             };
             let subpaths = outline::subpaths(&glyph.path).map_err(error)?;
-            if !subpaths.is_empty() {
-                let bounds = outline::to_bez_path(&subpaths).bounding_box();
+            if let Some(bounds) = outline::bounds(&subpaths) {
                 bbox = Some(bbox.map_or(bounds, |b| b.union(bounds)));
             }
             let delta =
@@ -232,7 +254,7 @@ impl Strings {
 struct Layout<'a> {
     font_name: &'a str,
     units_per_em: u16,
-    bbox: Option<Rect>,
+    bbox: Option<Bounds>,
     strings: &'a Strings,
     charstrings: &'a [Vec<u8>],
     private: &'a [u8],
@@ -288,16 +310,9 @@ impl Layout<'_> {
 
     fn top_dict(&self, offsets: &Offsets) -> Result<Vec<u8>, CffError> {
         let mut dict = Vec::new();
-        if let Some(bbox) = self.bbox {
-            for v in [
-                bbox.x0.floor(),
-                bbox.y0.floor(),
-                bbox.x1.ceil(),
-                bbox.y1.ceil(),
-            ] {
-                // In range: the points were checked against i32 when rounded, and a
-                // cubic stays inside the hull of its control points.
-                dict_int(&mut dict, v as i32);
+        if let Some(b) = self.bbox {
+            for v in [b.x_min, b.y_min, b.x_max, b.y_max] {
+                dict_int(&mut dict, v);
             }
             dict.extend(FONT_BBOX);
         }

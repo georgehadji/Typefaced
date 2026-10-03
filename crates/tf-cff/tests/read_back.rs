@@ -11,7 +11,7 @@ use read_fonts::{FontData, FontRead};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::prelude::{LocationRef, Size};
 use skrifa::{FontRef, MetadataProvider};
-use tf_cff::{CffBuilder, CffError, OutlineError};
+use tf_cff::{Bounds, CffBuilder, CffError, OutlineError};
 use write_fonts::FontBuilder;
 use write_fonts::tables::head::Head;
 use write_fonts::tables::hhea::Hhea;
@@ -380,21 +380,61 @@ fn the_font_bbox_is_the_union_of_the_exact_curve_bounds_rounded_outwards() {
 }
 
 #[test]
-fn the_outline_used_for_bounds_is_the_one_encoded() {
+fn bounds_are_those_of_the_rounded_outline_rounded_outwards() {
     let mut bump = BezPath::new();
-    bump.move_to((0.4, 0.0));
-    bump.curve_to((0.0, 101.0), (100.0, 101.0), (100.0, 0.0));
+    bump.move_to((0.4, 0.0)); // rounds to 0
+    bump.curve_to((0.0, 101.0), (100.0, 101.0), (100.0, 0.0)); // top at y = 75.75
     bump.line_to((0.4, 0.0));
+    bump.move_to((900.0, 900.0)); // draws nothing
 
-    let outline = tf_cff::cff_outline(&bump).unwrap();
+    let bounds = tf_cff::bounds(&bump).unwrap();
 
-    let mut expected = BezPath::new();
-    expected.move_to((0.0, 0.0));
-    expected.curve_to((0.0, 101.0), (100.0, 101.0), (100.0, 0.0));
-    expected.close_path();
-    assert_eq!(outline, expected);
-    let bounds = kurbo::Shape::bounding_box(&outline);
-    assert_eq!((bounds.y0, bounds.y1), (0.0, 75.75));
+    let expected = Bounds {
+        x_min: 0,
+        y_min: 0,
+        x_max: 100,
+        y_max: 76,
+    };
+    assert_eq!(bounds, Some(expected));
+    assert_eq!(tf_cff::bounds(&BezPath::new()).unwrap(), None);
+}
+
+#[test]
+fn bounds_ignore_float_noise_at_a_vertical_end_tangent() {
+    // From Inria Sans Bold `two`: the curve ends at x = 40 with a vertical tangent;
+    // kurbo puts the extremum a hair below 40, which floor would make 39.
+    let mut path = BezPath::new();
+    path.move_to((180.0, 346.0));
+    path.curve_to((103.0, 308.0), (40.0, 238.0), (40.0, 95.0));
+    path.line_to((300.0, 95.0));
+
+    let bounds = tf_cff::bounds(&path).unwrap().unwrap();
+
+    assert_eq!(bounds.x_min, 40);
+}
+
+#[test]
+fn bounds_of_the_union() {
+    let a = Bounds {
+        x_min: 0,
+        y_min: -5,
+        x_max: 10,
+        y_max: 10,
+    };
+    let b = Bounds {
+        x_min: -3,
+        y_min: 0,
+        x_max: 5,
+        y_max: 20,
+    };
+
+    let expected = Bounds {
+        x_min: -3,
+        y_min: -5,
+        x_max: 10,
+        y_max: 20,
+    };
+    assert_eq!(a.union(b), expected);
 }
 
 fn build_error(builder: CffBuilder) -> CffError {

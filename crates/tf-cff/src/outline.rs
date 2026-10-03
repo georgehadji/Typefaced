@@ -1,10 +1,10 @@
 //! Glyph outlines as CFF stores them (rounded, closed subpaths) and their Type 2
 //! charstrings (TN #5177): `rmoveto`, `rlineto`, `rrcurveto` and `endchar`, no hints.
 
-use kurbo::{BezPath, PathEl, Point};
+use kurbo::{BezPath, PathEl, Point, Shape};
 
-use crate::OutlineError;
 use crate::encode::charstring_int;
+use crate::{Bounds, OutlineError};
 
 const RLINETO: u8 = 5;
 const RRCURVETO: u8 = 8;
@@ -112,6 +112,36 @@ pub(crate) fn to_bez_path(subpaths: &[Subpath]) -> BezPath {
         path.close_path();
     }
     path
+}
+
+/// Extrema closer than this to an integer are taken as that integer: kurbo can find a
+/// root at `t = 1 − ε` where the tangent is vertical at an end point, and evaluate the
+/// curve a hair outside its true extent, which floor or ceiling would turn into a
+/// whole unit.
+const SNAP: f64 = 1e-6;
+
+/// The exact bounds of the subpaths, rounded outwards; `None` if there are none.
+pub(crate) fn bounds(subpaths: &[Subpath]) -> Option<Bounds> {
+    if subpaths.is_empty() {
+        return None;
+    }
+    let rect = to_bez_path(subpaths).bounding_box();
+    let outward = |v: f64, round: fn(f64) -> f64| {
+        let nearest = v.round();
+        // In i32 range: the points were checked when rounded, and a cubic stays
+        // inside the hull of its control points.
+        (if (v - nearest).abs() < SNAP {
+            nearest
+        } else {
+            round(v)
+        }) as i32
+    };
+    Some(Bounds {
+        x_min: outward(rect.x0, f64::floor),
+        y_min: outward(rect.y0, f64::floor),
+        x_max: outward(rect.x1, f64::ceil),
+        y_max: outward(rect.y1, f64::ceil),
+    })
 }
 
 /// The Type 2 charstring: the width delta (if any) first, then one operator per
