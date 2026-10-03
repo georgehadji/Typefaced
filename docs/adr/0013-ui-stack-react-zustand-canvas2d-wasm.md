@@ -49,3 +49,12 @@ Pass criteria (Step 8 exit criteria):
 - If a budget fails, the report names the mitigation and the ADR is amended. It is never silently accepted.
 
 Step 8 then sets this ADR to Accepted, or amends it, for example "move drag state further into the UI" (the R3 fallback).
+
+## Amendment (Spike 3, 2026-10-03)
+
+Report: [spike-3-ipc.md](../spikes/spike-3-ipc.md). Measured on one Windows laptop (i7-9750H, WebView2 with Chromium 154).
+
+- **The WASM kernel passes its budget.** A hit test over all 5,000 points and 50 contours takes p95 0.3 to 0.8 ms in the WebView (0.07 to 0.11 ms native). The module is 36.5 KiB raw and 16.3 KiB gzipped, far under 350 KB. The CSP needs `'wasm-unsafe-eval'`, which is set.
+- **`Path2D` caching is required, not optional.** Rebuilding the paths of the 5,000-point glyph every frame costs 5 to 9 ms of script time at the median; cached paths cost about 0.5 ms. Draw handles only for the selected contours: drawing all 5,000 handle squares caused stalls in exploratory runs.
+- **The 16 ms drag frame budget is not demonstrated.** An empty `requestAnimationFrame` loop in this window already runs at a 17.8 ms median. With cached paths and under 1.5 ms of script time per frame, frames still arrive every 35.7 ms in the benchmark page; the cause is outside the script and was not found. This ADR does not claim 60 fps until it is shown.
+- **Status stays Proposed.** It becomes Accepted when the manual run in the spike report's follow-ups shows `drag.cached` frame time within 2 ms of the empty-frame cadence on hardware that reaches 16.7 ms, or when the budget is re-stated. No structural change is proposed: dragging stays local in the webview.

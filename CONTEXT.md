@@ -60,6 +60,7 @@ and version over typed IPC. The status of each step is in the table at the top o
 | `crates/tf-commands/` | [CONTEXT.md](crates/tf-commands/CONTEXT.md) | Typed command catalog crate (application layer) |
 | `crates/tf-commands/src/` | [CONTEXT.md](crates/tf-commands/src/CONTEXT.md) | Command and payload types |
 | `crates/tf-geometry/` | [CONTEXT.md](crates/tf-geometry/CONTEXT.md) | Geometry kernel crate on packed outlines (domain layer) |
+| `crates/tf-geometry/benches/` | [CONTEXT.md](crates/tf-geometry/benches/CONTEXT.md) | Headless timing of the hit test |
 | `crates/tf-geometry/src/` | [CONTEXT.md](crates/tf-geometry/src/CONTEXT.md) | Hit testing and point edits |
 | `crates/tf-wasm/` | [CONTEXT.md](crates/tf-wasm/CONTEXT.md) | WebAssembly facade crate over `tf-geometry` (driver layer) |
 | `crates/tf-wasm/src/` | [CONTEXT.md](crates/tf-wasm/src/CONTEXT.md) | The exported WASM functions |
@@ -177,6 +178,7 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── src/lib.rs
 │   │   └── Cargo.toml
 │   ├── tf-geometry/
+│   │   ├── benches/hit_test.rs
 │   │   ├── src/lib.rs
 │   │   └── Cargo.toml
 │   └── tf-wasm/
@@ -205,7 +207,9 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── 0019-clean-room-spacing-algorithm.md
 │   │   ├── README.md
 │   │   └── template.md
-│   ├── spikes/spike-6-collections.md
+│   ├── spikes/
+│   │   ├── spike-3-ipc.md
+│   │   └── spike-6-collections.md
 │   ├── implementation-plan.md
 │   └── research.md
 ├── packages/
