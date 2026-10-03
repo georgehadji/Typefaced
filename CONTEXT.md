@@ -34,7 +34,7 @@ and version over typed IPC. The status of each step is in the table at the top o
 | Full architecture and roadmap | `docs/implementation-plan.md` |
 | Current work and what is left | `plans/` (status table) |
 | IPC command types | `crates/tf-commands/src/lib.rs` → `packages/bindings/src/index.ts` |
-| Compiling a UFO or designspace to TTF | `crates/tf-compile/src/lib.rs` |
+| Compiling a UFO or designspace to TTF, or a UFO to OTF | `crates/tf-compile/src/lib.rs` |
 | Writing a `CFF ` table from cubic outlines | `crates/tf-cff/src/lib.rs` |
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
 | UI code | `apps/desktop/src/` |
@@ -62,10 +62,10 @@ and version over typed IPC. The status of each step is in the table at the top o
 | `crates/tf-cff/tests/` | [CONTEXT.md](crates/tf-cff/tests/CONTEXT.md) | Tables built and read back with read-fonts and skrifa |
 | `crates/tf-commands/` | [CONTEXT.md](crates/tf-commands/CONTEXT.md) | Typed command catalog crate (application layer) |
 | `crates/tf-commands/src/` | [CONTEXT.md](crates/tf-commands/src/CONTEXT.md) | Command and payload types |
-| `crates/tf-compile/` | [CONTEXT.md](crates/tf-compile/CONTEXT.md) | Font compiler crate (adapter layer): UFO and designspace to TTF through fontc |
-| `crates/tf-compile/src/` | [CONTEXT.md](crates/tf-compile/src/CONTEXT.md) | The compile function and its error type |
-| `crates/tf-compile/examples/` | [CONTEXT.md](crates/tf-compile/examples/CONTEXT.md) | Timing programs for Spike 1 |
-| `crates/tf-compile/tests/` | [CONTEXT.md](crates/tf-compile/tests/CONTEXT.md) | Fixture, corpus and designspace 5 tests |
+| `crates/tf-compile/` | [CONTEXT.md](crates/tf-compile/CONTEXT.md) | Font compiler crate (adapter layer): UFO and designspace to TTF through fontc; TTF to OTF |
+| `crates/tf-compile/src/` | [CONTEXT.md](crates/tf-compile/src/CONTEXT.md) | Compile functions, OTF transplant, source outline reader, error type |
+| `crates/tf-compile/examples/` | [CONTEXT.md](crates/tf-compile/examples/CONTEXT.md) | Timing programs for Spikes 1 and 2 |
+| `crates/tf-compile/tests/` | [CONTEXT.md](crates/tf-compile/tests/CONTEXT.md) | Fixture, corpus, designspace 5 and OTF tests |
 | `crates/tf-compile/tests/data/` | [CONTEXT.md](crates/tf-compile/tests/data/CONTEXT.md) | Input files for the tests |
 | `docs/` | [CONTEXT.md](docs/CONTEXT.md) | Research, implementation plan |
 | `docs/adr/` | [CONTEXT.md](docs/adr/CONTEXT.md) | Architecture decision records |
@@ -183,12 +183,16 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │       ├── examples/
 │       │   ├── baseline.rs
 │       │   └── compile.rs
-│       ├── src/lib.rs
+│       ├── src/
+│       │   ├── lib.rs
+│       │   ├── otf.rs
+│       │   └── source.rs
 │       ├── tests/
 │       │   ├── data/discrete-axis.designspace
 │       │   ├── compile_fixture.rs
 │       │   ├── corpus.rs
-│       │   └── designspace_v5.rs
+│       │   ├── designspace_v5.rs
+│       │   └── otf.rs
 │       └── Cargo.toml
 ├── docs/
 │   ├── adr/
