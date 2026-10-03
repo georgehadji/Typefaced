@@ -13,11 +13,20 @@ const HIT_RADIUS = 8;
 /** Binary packets start with a 16-byte header (see `src-tauri/src/bench.rs`). */
 const HEADER_BYTES = 16;
 
-export interface CommitResult {
-  iterations: number;
+/** Points per commit edit: a few moved points up to the whole 5,000-point glyph. */
+export const COMMIT_SIZES = [1, 100, 1000, 5000] as const;
+
+export interface CommitSizeResult {
+  /** Points in the edit (and in the patch that comes back). */
+  points: number;
   payloadBytes: { json: number; binary: number };
   json: Summary;
   binary: Summary;
+}
+
+export interface CommitResult {
+  iterations: number;
+  bySize: CommitSizeResult[];
 }
 
 export interface StreamResult {
@@ -31,7 +40,11 @@ export interface StreamResult {
   interArrival: Summary;
 }
 
+/** What a drag frame draws, see `benchDrag`. */
+export type DragMode = "compute" | "rebuild" | "cached";
+
 export interface DragResult {
+  mode: DragMode;
   durationMs: number;
   frames: number;
   selectedPoints: number;
@@ -45,6 +58,8 @@ export interface DragResult {
 
 export interface HitTestResult {
   calls: number;
+  /** Hit radius in font units. */
+  radius: number;
   perCall: Summary;
   /** Total time of all calls divided by their number (finer than the clock's resolution). */
   meanFromBatchMs: number;
@@ -68,48 +83,84 @@ export async function benchCommit(
   warmup = 20,
 ): Promise<CommitResult> {
   const glyph = makeGlyph();
-  const timeJson = async (i: number) => {
-    const coords = shifted(glyph, i % 10);
-    const t0 = performance.now();
-    const patch = await invoke<Patch>("bench_commit_json", {
-      edit: { coords: Array.from(coords) },
-    });
-    const replica = Float64Array.from(patch.coords);
-    const elapsed = performance.now() - t0;
-    if (replica.length !== coords.length)
-      throw new Error("JSON patch has the wrong size");
-    return elapsed;
-  };
-  const timeBinary = async (i: number) => {
-    const coords = shifted(glyph, i % 10);
-    const t0 = performance.now();
-    const buffer = await invoke<ArrayBuffer>(
-      "bench_commit_binary",
-      new Uint8Array(coords.buffer),
-    );
-    const replica = new Float64Array(buffer, HEADER_BYTES);
-    const elapsed = performance.now() - t0;
-    if (replica.length !== coords.length)
-      throw new Error("binary patch has the wrong size");
-    return elapsed;
-  };
   const run = async (once: (i: number) => Promise<number>) => {
     for (let i = 0; i < warmup; i++) await once(i);
     const samples: number[] = [];
     for (let i = 0; i < iterations; i++) samples.push(await once(i));
     return summarize(samples);
   };
-  const json = await run(timeJson);
-  const binary = await run(timeBinary);
+  const bySize: CommitSizeResult[] = [];
+  for (const points of COMMIT_SIZES) {
+    const part: PackedOutline = {
+      ...glyph,
+      coords: glyph.coords.slice(0, points * 2),
+    };
+    const timeJson = async (i: number) => {
+      const coords = shifted(part, i % 10);
+      const t0 = performance.now();
+      const patch = await invoke<Patch>("bench_commit_json", {
+        edit: { coords: Array.from(coords) },
+      });
+      const replica = Float64Array.from(patch.coords);
+      const elapsed = performance.now() - t0;
+      if (replica.length !== coords.length)
+        throw new Error("JSON patch has the wrong size");
+      return elapsed;
+    };
+    const timeBinary = async (i: number) => {
+      const coords = shifted(part, i % 10);
+      const t0 = performance.now();
+      const buffer = await invoke<ArrayBuffer>(
+        "bench_commit_binary",
+        new Uint8Array(coords.buffer),
+      );
+      const replica = new Float64Array(buffer, HEADER_BYTES);
+      const elapsed = performance.now() - t0;
+      if (replica.length !== coords.length)
+        throw new Error("binary patch has the wrong size");
+      return elapsed;
+    };
+    const json = await run(timeJson);
+    const binary = await run(timeBinary);
+    bySize.push({
+      points,
+      payloadBytes: {
+        json: JSON.stringify({ edit: { coords: Array.from(part.coords) } })
+          .length,
+        binary: part.coords.byteLength,
+      },
+      json,
+      binary,
+    });
+  }
+  return { iterations, bySize };
+}
+
+export interface PingResult {
+  /** `invoke` of a command that returns nothing, handled on the main thread. */
+  main: Summary;
+  /** The same, handled on the async runtime (as the commit commands are). */
+  asyncRuntime: Summary;
+}
+
+/** The floor of one IPC round trip: no payload, no work. */
+export async function benchPing(
+  iterations = 1000,
+  warmup = 20,
+): Promise<PingResult> {
+  const run = async (command: string) => {
+    for (let i = 0; i < warmup; i++) await invoke(command);
+    const samples: number[] = [];
+    for (let i = 0; i < iterations; i++) {
+      const t0 = performance.now();
+      await invoke(command);
+      samples.push(performance.now() - t0);
+    }
+    return summarize(samples);
+  };
   return {
-    iterations,
-    payloadBytes: {
-      json: JSON.stringify({ edit: { coords: Array.from(glyph.coords) } })
-        .length,
-      binary: glyph.coords.byteLength,
-    },
-    json,
-    binary,
+    main: await run("bench_ping"),
+    asyncRuntime: await run("bench_ping_async"),
   };
 }
 
@@ -162,7 +213,10 @@ export function loadKernel(): Promise<unknown> {
   return kernelReady;
 }
 
-export async function benchHitTest(calls = 1000): Promise<HitTestResult> {
+export async function benchHitTest(
+  calls = 1000,
+  radius = HIT_RADIUS,
+): Promise<HitTestResult> {
   await loadKernel();
   const glyph = makeGlyph();
   // Deterministic positions spread over the glyph's bounding box.
@@ -181,29 +235,37 @@ export async function benchHitTest(calls = 1000): Promise<HitTestResult> {
   for (const [x, y] of positions) {
     const t0 = performance.now();
     const hit = decodeHit(
-      hitTest(glyph.coords, glyph.flags, glyph.contourEnds, x, y, HIT_RADIUS),
+      hitTest(glyph.coords, glyph.flags, glyph.contourEnds, x, y, radius),
     );
     perCall.push(performance.now() - t0);
     hits[hit?.kind ?? "none"]++;
   }
   return {
     calls,
+    radius,
     perCall: summarize(perCall),
     meanFromBatchMs: (performance.now() - start) / calls,
     hits,
   };
 }
 
-function drawGlyph(
-  ctx: CanvasRenderingContext2D,
-  coords: Float64Array,
-  flags: Uint8Array,
-  contourEnds: Uint32Array,
-) {
+/** The outline and the point handles of a run of contours, as drawable paths. */
+interface GlyphPaths {
+  outline: Path2D;
+  handles: Path2D;
+}
+
+/** Builds the paths of contours `fromContour` up to (not including) `toContour`. */
+function buildPaths(
+  { coords, flags, contourEnds }: PackedOutline,
+  fromContour: number,
+  toContour: number,
+): GlyphPaths {
   const outline = new Path2D();
   const handles = new Path2D();
-  let first = 0;
-  for (const last of contourEnds) {
+  for (let c = fromContour; c < toContour; c++) {
+    const first = c === 0 ? 0 : contourEnds[c - 1] + 1;
+    const last = contourEnds[c];
     outline.moveTo(coords[2 * first], coords[2 * first + 1]);
     let i = first + 1;
     while (i <= last) {
@@ -224,28 +286,62 @@ function drawGlyph(
       }
     }
     outline.closePath();
-    first = last + 1;
+    for (let p = first; p <= last; p++) {
+      handles.rect(coords[2 * p] - 1.5, coords[2 * p + 1] - 1.5, 3, 3);
+    }
   }
-  for (let i = 0; i < flags.length; i++) {
-    handles.rect(coords[2 * i] - 1.5, coords[2 * i + 1] - 1.5, 3, 3);
-  }
-  ctx.fill(outline, "nonzero");
-  ctx.stroke(outline);
-  ctx.fill(handles);
+  return { outline, handles };
 }
+
+function paint(ctx: CanvasRenderingContext2D, paths: GlyphPaths) {
+  ctx.fill(paths.outline, "nonzero");
+  ctx.stroke(paths.outline);
+  ctx.fill(paths.handles);
+}
+
+/** Empty animation frames: the cadence this window can reach before any work is done. */
+export function benchFrameBaseline(durationMs = 3000): Promise<Summary> {
+  return new Promise((resolve) => {
+    const deltas: number[] = [];
+    let startedAt: number | undefined;
+    let previous: number | undefined;
+    const frame = (now: number) => {
+      startedAt ??= now;
+      if (previous !== undefined) deltas.push(now - previous);
+      previous = now;
+      if (now - startedAt < durationMs) requestAnimationFrame(frame);
+      else resolve(summarize(deltas));
+    };
+    requestAnimationFrame(frame);
+  });
+}
+
+/** Contours in the drag selection: ten contours, 1,000 points, a large selection. */
+const DRAGGED_CONTOURS = 10;
 
 /**
  * A synthetic drag: every animation frame moves the pointer along a circle, hit-tests
- * under it, translates the selected contours and redraws the whole glyph with Path2D.
+ * under it and translates the selected contours with the WASM kernel, then draws:
+ * - `compute`: nothing (the cadence the kernel alone allows);
+ * - `rebuild`: the whole moved glyph, with new `Path2D` objects built every frame;
+ * - `cached`: `Path2D` objects built once per glyph revision (ADR-0013); the dragged
+ *   contours are drawn with a canvas transform and the rest are not rebuilt.
  */
 export async function benchDrag(
   canvas: HTMLCanvasElement,
   durationMs = 10_000,
+  mode: DragMode = "rebuild",
 ): Promise<DragResult> {
   await loadKernel();
   const glyph = makeGlyph();
-  // The drag moves ten contours (1,000 points): a large selection.
-  const selection = Uint32Array.from({ length: 1000 }, (_, i) => i);
+  const draggedPoints = glyph.contourEnds[DRAGGED_CONTOURS - 1] + 1;
+  const selection = Uint32Array.from({ length: draggedPoints }, (_, i) => i);
+  const still =
+    mode === "cached"
+      ? buildPaths(glyph, DRAGGED_CONTOURS, glyph.contourEnds.length)
+      : undefined;
+  const dragged =
+    mode === "cached" ? buildPaths(glyph, 0, DRAGGED_CONTOURS) : undefined;
   const dpr = window.devicePixelRatio || 1;
   const size = canvas.clientWidth;
   canvas.width = Math.round(size * dpr);
@@ -275,17 +371,31 @@ export async function benchDrag(
         HIT_RADIUS,
       );
       const moved = translatePoints(glyph.coords, selection, dx, dy);
-      ctx.setTransform(scale, 0, 0, -scale, 0, canvas.height);
-      ctx.clearRect(0, 0, 1000, 1000);
-      ctx.fillStyle = "rgba(40, 40, 40, 0.25)";
-      ctx.strokeStyle = "#222";
-      ctx.lineWidth = 1 / scale;
-      drawGlyph(ctx, moved, glyph.flags, glyph.contourEnds);
+      if (mode !== "compute") {
+        ctx.setTransform(scale, 0, 0, -scale, 0, canvas.height);
+        ctx.clearRect(0, 0, 1000, 1000);
+        ctx.fillStyle = "rgba(40, 40, 40, 0.25)";
+        ctx.strokeStyle = "#222";
+        ctx.lineWidth = 1 / scale;
+        if (still && dragged) {
+          paint(ctx, still);
+          ctx.translate(dx, dy);
+          paint(ctx, dragged);
+        } else {
+          const paths = buildPaths(
+            { ...glyph, coords: moved },
+            0,
+            glyph.contourEnds.length,
+          );
+          paint(ctx, paths);
+        }
+      }
       work.push(performance.now() - t0);
       if (now - startedAt < durationMs) {
         requestAnimationFrame(frame);
       } else {
         resolve({
+          mode,
           durationMs: now - startedAt,
           frames: deltas.length,
           selectedPoints: selection.length,

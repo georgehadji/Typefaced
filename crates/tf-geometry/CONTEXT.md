@@ -10,4 +10,5 @@ the `tf-wasm` crate exposes it to the UI. Up: [crates/CONTEXT.md](../CONTEXT.md)
 
 | Subfolder | Context |
 |---|---|
+| `benches/` | [CONTEXT.md](benches/CONTEXT.md): headless timing of the hit test |
 | `src/` | [CONTEXT.md](src/CONTEXT.md): the kernel |

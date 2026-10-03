@@ -30,6 +30,10 @@ pub mod flags {
 /// Accuracy passed to kurbo's nearest-point search, in font units.
 const NEAREST_ACCURACY: f64 = 1e-9;
 
+/// Largest coordinate magnitude, in font units, for which segments are hit-tested.
+/// Far beyond any real design space; it keeps kurbo's curve solver away from overflow.
+pub const MAX_COORD: f64 = 1e9;
+
 /// What [`hit_test`] found.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Hit {
@@ -60,7 +64,9 @@ struct Segment {
 ///
 /// Returns `None` when nothing is within the radius, or when `radius` is negative or NaN.
 /// Malformed parts of the outline are skipped: points beyond the shorter of `coords`
-/// and `flags`, and contours whose end is out of range or before their start.
+/// and `flags`, and contours whose end is out of range or before their start. Segments
+/// with a coordinate that is not finite or beyond ±[`MAX_COORD`] cannot be hit.
+#[must_use]
 pub fn hit_test(
     coords: &[f64],
     flags: &[u8],
@@ -80,6 +86,7 @@ pub fn hit_test(
 
 /// Returns a copy of `coords` in which every point listed in `selection` is moved by
 /// `(dx, dy)` exactly once. Duplicate and out-of-range indices are ignored.
+#[must_use]
 pub fn translate_points(coords: &[f64], selection: &[u32], dx: f64, dy: f64) -> Vec<f64> {
     let mut moved = coords.to_vec();
     let mut done = vec![false; coords.len() / 2];
@@ -127,15 +134,16 @@ fn nearest_segment(
 ) -> Option<Hit> {
     let limit = radius * radius;
     let mut best: Option<(Segment, f64, f64)> = None;
-    for s in segments(coords, flags, contour_ends) {
-        if !near_control_box(&s.seg, p, radius) {
-            continue;
+    let near_contour = |first, last| contour_is_near(coords, first, last, p, radius);
+    for_each_segment(coords, flags, contour_ends, near_contour, |s| {
+        if !within_limits(&s.seg) || !near_control_box(&s.seg, p, radius) {
+            return;
         }
         let found = s.seg.nearest(p, NEAREST_ACCURACY);
         if found.distance_sq <= limit && best.is_none_or(|(_, _, b)| found.distance_sq < b) {
             best = Some((s, found.t, found.distance_sq));
         }
-    }
+    });
     best.map(|(s, t, d2)| Hit::Segment {
         contour: s.contour,
         start: s.start,
@@ -143,6 +151,16 @@ fn nearest_segment(
         t,
         distance: d2.sqrt(),
     })
+}
+
+/// Whether every control point of the segment is finite and within ±[`MAX_COORD`].
+fn within_limits(seg: &PathSeg) -> bool {
+    let ok = |q: &Point| q.x.abs() <= MAX_COORD && q.y.abs() <= MAX_COORD;
+    match seg {
+        PathSeg::Line(l) => ok(&l.p0) && ok(&l.p1),
+        PathSeg::Quad(q) => ok(&q.p0) && ok(&q.p1) && ok(&q.p2),
+        PathSeg::Cubic(c) => ok(&c.p0) && ok(&c.p1) && ok(&c.p2) && ok(&c.p3),
+    }
 }
 
 /// Whether `p` lies inside the segment's control-point box grown by `radius`. The curve
@@ -169,10 +187,47 @@ fn near_control_box(seg: &PathSeg, p: Point, radius: f64) -> bool {
     p.x >= x0 - radius && p.x <= x1 + radius && p.y >= y0 - radius && p.y <= y1 + radius
 }
 
-/// Every segment of every well-formed contour, in order.
+/// Whether `p` lies inside the box around the points `first..=last` grown by `radius`.
+/// Every segment of a contour lies inside the hull of its points, so a contour failing
+/// this has no segment within `radius`, and its segments are never built. Points that
+/// are NaN do not widen the box; the segments that use them are rejected anyway.
+fn contour_is_near(coords: &[f64], first: usize, last: usize, p: Point, radius: f64) -> bool {
+    let (mut x0, mut y0, mut x1, mut y1) = (
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    );
+    let (pairs, _) = coords[2 * first..2 * (last + 1)].as_chunks::<2>();
+    for [x, y] in pairs {
+        x0 = x0.min(*x);
+        y0 = y0.min(*y);
+        x1 = x1.max(*x);
+        y1 = y1.max(*y);
+    }
+    p.x >= x0 - radius && p.x <= x1 + radius && p.y >= y0 - radius && p.y <= y1 + radius
+}
+
+/// Every segment of every well-formed contour, in order, collected (used by the tests).
+#[cfg(test)]
 fn segments(coords: &[f64], flags: &[u8], contour_ends: &[u32]) -> Vec<Segment> {
-    let n = point_count(coords, flags);
     let mut out = Vec::new();
+    for_each_segment(coords, flags, contour_ends, |_, _| true, |s| out.push(s));
+    out
+}
+
+/// Calls `visit` for every segment of every well-formed contour, in order, without
+/// allocating: a hit test runs once per pointer move and must stay well under a frame.
+/// `keep(first, last)` is asked for each contour (its first and last point) and returns
+/// false to skip it.
+fn for_each_segment(
+    coords: &[f64],
+    flags: &[u8],
+    contour_ends: &[u32],
+    keep: impl Fn(usize, usize) -> bool,
+    mut visit: impl FnMut(Segment),
+) {
+    let n = point_count(coords, flags);
     let mut start = 0usize;
     for (contour, &end) in contour_ends.iter().enumerate() {
         let end = end as usize;
@@ -180,10 +235,11 @@ fn segments(coords: &[f64], flags: &[u8], contour_ends: &[u32]) -> Vec<Segment> 
             // Malformed contour: skip it; the next contour starts where this one would have.
             continue;
         }
-        contour_segments(coords, flags, contour, start, end, &mut out);
+        if keep(start, end) {
+            contour_segments(coords, flags, contour, start, end, &mut visit);
+        }
         start = end + 1;
     }
-    out
 }
 
 /// Segments of the closed contour made of points `first..=last`.
@@ -193,7 +249,7 @@ fn contour_segments(
     contour: usize,
     first: usize,
     last: usize,
-    out: &mut Vec<Segment>,
+    visit: &mut impl FnMut(Segment),
 ) {
     let len = last - first + 1;
     let is_on = |i: usize| flags[i] & flags::TYPE_MASK != flags::OFF_CURVE;
@@ -202,35 +258,40 @@ fn contour_segments(
         return;
     };
     let mut prev_on = anchor;
-    let mut offs: Vec<usize> = Vec::new();
+    // The first two off-curve points since the last on-curve point, and how many there were.
+    let mut offs = [0usize; 2];
+    let mut off_count = 0usize;
     for step in 1..=len {
         let i = first + (anchor - first + step) % len;
         if !is_on(i) {
-            offs.push(i);
+            if let Some(slot) = offs.get_mut(off_count) {
+                *slot = i;
+            }
+            off_count += 1;
             continue;
         }
         let p0 = point_at(coords, prev_on);
         let p3 = point_at(coords, i);
-        let seg = match (flags[i] & flags::TYPE_MASK, offs.as_slice()) {
-            (flags::CURVE, &[a, b]) => PathSeg::Cubic(CubicBez::new(
+        let seg = match (flags[i] & flags::TYPE_MASK, off_count) {
+            (flags::CURVE, 2) => PathSeg::Cubic(CubicBez::new(
                 p0,
-                point_at(coords, a),
-                point_at(coords, b),
+                point_at(coords, offs[0]),
+                point_at(coords, offs[1]),
                 p3,
             )),
-            (flags::QCURVE, &[a]) => PathSeg::Quad(QuadBez::new(p0, point_at(coords, a), p3)),
+            (flags::QCURVE, 1) => PathSeg::Quad(QuadBez::new(p0, point_at(coords, offs[0]), p3)),
             // ponytail: other off-curve counts (TrueType implied points, super-curves) are
             // treated as a straight segment; split them into quads/cubics when a tool needs it.
             _ => PathSeg::Line(Line::new(p0, p3)),
         };
-        out.push(Segment {
+        visit(Segment {
             contour,
             start: prev_on,
             end: i,
             seg,
         });
         prev_on = i;
-        offs.clear();
+        off_count = 0;
     }
 }
 
@@ -418,6 +479,25 @@ mod tests {
         let found = segments(&c, &f, &[5]);
         assert_eq!(found.len(), 3);
         assert!(found.iter().all(|s| matches!(s.seg, PathSeg::Line(_))));
+    }
+
+    #[test]
+    fn segments_with_absurd_coordinates_cannot_be_hit_but_their_points_can() {
+        let f = [ON; 2];
+        for far in [f64::INFINITY, f64::NAN, 2.0 * MAX_COORD, -2.0 * MAX_COORD] {
+            let c = [0.0, 0.0, far, 0.0];
+            assert_eq!(hit_test(&c, &f, &[1], 5.0, 1.0, 2.0), None);
+            assert!(matches!(
+                hit_test(&c, &f, &[1], 0.0, 1.0, 2.0),
+                Some(Hit::Point { index: 0, .. })
+            ));
+        }
+        // The limit itself is still hit-testable.
+        let c = [0.0, 0.0, MAX_COORD, 0.0];
+        assert!(matches!(
+            hit_test(&c, &f, &[1], 5.0, 1.0, 2.0),
+            Some(Hit::Segment { .. })
+        ));
     }
 
     #[test]

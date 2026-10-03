@@ -5,9 +5,9 @@ drop it. It measures IPC and WASM latency and reports the results to Rust. Up: [
 
 | File | What it does |
 |---|---|
-| `BenchPage.tsx` | The page: runs every benchmark once, logs progress, then sends the results to the `bench_report` command |
-| `BenchPage.test.tsx` | Tests for `BenchPage` with the runners and Tauri mocked: reports results once, shows a failure |
-| `runners.ts` | The measurements: commit round trip (JSON vs binary), patch stream over a `Channel`, WASM hit tests, synthetic drag. Needs the real WebView, so it is excluded from unit-test coverage |
+| `BenchPage.tsx` | The page: runs every benchmark once, logs progress (on screen and to the Rust log), then sends the results, or the error, to the `bench_report` command |
+| `BenchPage.test.tsx` | Tests for `BenchPage` with the runners and Tauri mocked: reports results once, reports a failure to Rust, logs progress |
+| `runners.ts` | The measurements: empty IPC round trip, commit round trip (JSON vs binary, 1 to 5,000 points), patch stream over a `Channel`, WASM hit tests, empty animation frames, synthetic drag (compute only, rebuilt paths, cached paths). Needs the real WebView, so it is excluded from unit-test coverage |
 | `outline.ts` | `PackedOutline` type, `makeGlyph` (synthetic glyph for the benchmarks), point flag constants and `decodeHit` for the WASM hit result |
 | `outline.test.ts` | Tests for `makeGlyph` and `decodeHit` |
 | `stats.ts` | `percentile` and `summarize`: the timing distribution (mean, min, p50, p95, p99, max) |

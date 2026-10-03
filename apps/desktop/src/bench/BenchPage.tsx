@@ -3,10 +3,21 @@ import { useEffect, useRef, useState } from "react";
 import {
   benchCommit,
   benchDrag,
+  benchFrameBaseline,
   benchHitTest,
   benchPatchStream,
+  benchPing,
 } from "./runners";
 import "./bench.css";
+
+/** Calls a bench command and ignores a failure: reporting must never mask the real error. */
+async function sendToRust(command: string, args: Record<string, unknown>) {
+  try {
+    await invoke(command, args);
+  } catch {
+    // Nothing more can be done from the page.
+  }
+}
 
 /** Dev-only page (`#/bench`): runs every M0 Step 8 benchmark once, then reports to Rust. */
 export default function BenchPage() {
@@ -19,8 +30,13 @@ export default function BenchPage() {
     if (started.current || !canvas.current) return;
     started.current = true;
     const target = canvas.current;
-    const step = (line: string) => setLog((lines) => [...lines, line]);
+    // Progress also goes to the Rust log, so an unattended run shows where it stopped.
+    const step = (line: string) => {
+      setLog((lines) => [...lines, line]);
+      void sendToRust("bench_log", { line });
+    };
     const runAll = async () => {
+      step("page loaded");
       const environment = {
         userAgent: navigator.userAgent,
         devicePixelRatio: window.devicePixelRatio,
@@ -29,29 +45,50 @@ export default function BenchPage() {
         visibility: document.visibilityState,
         hasFocus: document.hasFocus(),
       };
-      step("commit round-trip (1,000 × JSON, 1,000 × binary)…");
+      step(
+        "empty IPC round trip (1,000 × main thread, 1,000 × async runtime)…",
+      );
+      const ping = await benchPing();
+      step(
+        "commit round-trip (1,000 × JSON, 1,000 × binary, at 1 to 5,000 points)…",
+      );
       const commit = await benchCommit();
       step("patch stream, 1-point patches (60 Hz, 10 s)…");
       const streamSmall = await benchPatchStream(1);
       step("patch stream, 5,000-point patches (60 Hz, 10 s)…");
       const streamLarge = await benchPatchStream(5000);
-      step("hit test (1,000 calls)…");
+      step(
+        "hit test (1,000 calls, radius 8; then radius 1, which finds segments)…",
+      );
       const hitTest = await benchHitTest();
-      step("drag (10 s)…");
-      const drag = await benchDrag(target);
+      const hitTestSegments = await benchHitTest(1000, 1);
+      step("empty animation frames (3 s)…");
+      const frameBaseline = await benchFrameBaseline();
+      step("drag, hit test and translate only (10 s)…");
+      const compute = await benchDrag(target, 10_000, "compute");
+      step("drag, glyph rebuilt every frame (10 s)…");
+      const rebuild = await benchDrag(target, 10_000, "rebuild");
+      step("drag, cached Path2D objects (10 s)…");
+      const cached = await benchDrag(target, 10_000, "cached");
       const results = {
         environment,
         visibilityAfter: document.visibilityState,
+        ping,
         commit,
         stream: { small: streamSmall, large: streamLarge },
         hitTest,
-        drag,
+        hitTestSegments,
+        frameBaseline,
+        drag: { compute, rebuild, cached },
       };
       step(JSON.stringify(results, null, 2));
       await invoke("bench_report", { results });
       step("reported to Rust (target/bench-results.json)");
     };
-    runAll().catch((error: unknown) => step(`failed: ${String(error)}`));
+    runAll().catch((error: unknown) => {
+      step(`failed: ${String(error)}`);
+      void sendToRust("bench_report", { results: { error: String(error) } });
+    });
   }, []);
 
   return (

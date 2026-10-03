@@ -16,5 +16,10 @@ kurbo = "0.13.1"
 [dev-dependencies]
 proptest = "1"
 
+# Plain timing loop on the 5,000-point glyph; `cargo bench -p tf-geometry`.
+[[bench]]
+name = "hit_test"
+harness = false
+
 [lints]
 workspace = true
