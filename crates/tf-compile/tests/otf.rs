@@ -467,6 +467,116 @@ fn a_designspace_source_cannot_become_an_otf() {
     assert!(matches!(err, CompileError::Transplant(_)), "{err}");
 }
 
+/// Copies a UFO folder, leaving out the files for which `keep` is false.
+fn copy_ufo(from: &Path, to: &Path, keep: &dyn Fn(&Path) -> bool) -> Res<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let path = entry?.path();
+        let target = to.join(path.file_name().ok_or("no file name")?);
+        if path.is_dir() {
+            copy_ufo(&path, &target, keep)?;
+        } else if keep(&path) {
+            std::fs::copy(&path, &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// The fixture without its `.notdef` glyph, in a fresh temporary folder.
+fn fixture_without_notdef() -> Res<PathBuf> {
+    let ufo = std::env::temp_dir()
+        .join(format!("tf-compile-no-notdef-{}", std::process::id()))
+        .join("min.ufo");
+    if ufo.exists() {
+        std::fs::remove_dir_all(&ufo)?;
+    }
+    copy_ufo(&fixture_path(), &ufo, &|path| {
+        path.file_name().is_some_and(|name| name != "_notdef.glif")
+    })?;
+    let contents = ufo.join("glyphs/contents.plist");
+    let plist: String = std::fs::read_to_string(&contents)?
+        .lines()
+        .filter(|line| !line.contains("notdef"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    std::fs::write(&contents, plist)?;
+    Ok(ufo)
+}
+
+fn to_bez_path(cmds: &[Cmd]) -> BezPath {
+    let mut path = BezPath::new();
+    for cmd in cmds {
+        match *cmd {
+            Cmd::Move(x, y) => path.move_to((x, y)),
+            Cmd::Line(x, y) => path.line_to((x, y)),
+            Cmd::Curve(a, b, c, d, e, f) => path.curve_to((a, b), (c, d), (e, f)),
+            Cmd::Close => path.close_path(),
+        }
+    }
+    path
+}
+
+#[test]
+fn a_notdef_fontc_synthesises_is_taken_from_the_ttf_and_reversed() {
+    let ufo = fixture_without_notdef().unwrap();
+    let ttf = compile_to_ttf(&ufo).unwrap();
+
+    let otf = compile_to_otf(&ufo).unwrap();
+
+    let (ttf, otf) = (FontRef::new(&ttf).unwrap(), FontRef::new(&otf).unwrap());
+    let notdef = GlyphId::new(0);
+    assert_eq!(ttf_glyph_names(&otf).unwrap()[0], ".notdef");
+    let ttf_path = to_bez_path(&draw(&ttf, notdef).unwrap());
+    let otf_path = to_bez_path(&draw(&otf, notdef).unwrap());
+    assert_eq!(otf_path.bounding_box(), ttf_path.bounding_box());
+    assert_ne!(ttf_path.area(), 0.0);
+    // TrueType contours run clockwise, CFF contours counter-clockwise.
+    assert_eq!(otf_path.area(), -ttf_path.area());
+}
+
+#[test]
+fn a_font_that_already_has_cff_outlines_is_rejected() {
+    let err = ttf_to_otf(&fixture().otf, &fixture().outlines).unwrap_err();
+
+    assert!(matches!(err, CompileError::Transplant(_)), "{err}");
+    assert!(err.to_string().contains("CFF"), "{err}");
+}
+
+#[test]
+fn more_long_metrics_than_glyphs_is_rejected() {
+    use write_fonts::from_obj::ToOwnedTable;
+    let ttf = FontRef::new(&fixture().ttf).unwrap();
+    let mut hhea: write_fonts::tables::hhea::Hhea = ttf.hhea().unwrap().to_owned_table();
+    hhea.number_of_h_metrics = ttf.maxp().unwrap().num_glyphs() + 1;
+    let mut builder = FontBuilder::new();
+    builder.add_table(&hhea).unwrap();
+    builder.copy_missing_tables(ttf);
+    let broken = builder.build();
+
+    let err = ttf_to_otf(&broken, &fixture().outlines).unwrap_err();
+
+    assert!(matches!(err, CompileError::Transplant(_)), "{err}");
+    assert!(err.to_string().contains("numberOfHMetrics"), "{err}");
+}
+
+#[test]
+fn a_dsig_table_is_dropped() {
+    let ttf = FontRef::new(&fixture().ttf).unwrap();
+    let mut builder = FontBuilder::new();
+    builder.add_raw(Tag::new(b"DSIG"), vec![0, 0, 0, 1, 0, 0, 0, 0]);
+    builder.copy_missing_tables(ttf);
+    let signed = builder.build();
+
+    let otf = ttf_to_otf(&signed, &fixture().outlines).unwrap();
+
+    assert!(
+        FontRef::new(&otf)
+            .unwrap()
+            .table_data(Tag::new(b"DSIG"))
+            .is_none()
+    );
+}
+
 #[test]
 fn bytes_that_are_not_a_font_are_an_error() {
     let err = ttf_to_otf(b"not a font", &fixture().outlines).unwrap_err();

@@ -2,10 +2,13 @@
 //! tables fontc built that do not depend on outlines, and replaces the TrueType
 //! outlines with a `CFF ` table built from the cubic source outlines.
 
+use std::borrow::Cow;
+
 use kurbo::BezPath;
 use tf_cff::{CffBuilder, CffError};
 use write_fonts::FontBuilder;
 use write_fonts::from_obj::ToOwnedTable;
+use write_fonts::read::tables::glyf::{CurvePoint, Glyph};
 use write_fonts::read::tables::hmtx::Hmtx as ReadHmtx;
 use write_fonts::read::{FontRef, TableProvider};
 use write_fonts::tables::{head::Head, hhea::Hhea, hmtx, maxp::Maxp, post::Post};
@@ -13,8 +16,9 @@ use write_fonts::types::{FWord, GlyphId, GlyphId16, NameId, Tag, Version16Dot16}
 
 use crate::{CompileError, SourceOutlines};
 
-/// TrueType outline, instruction and device tables, meaningless with CFF outlines.
-const DROPPED: [Tag; 9] = [
+/// TrueType outline, instruction and device tables, meaningless with CFF outlines, and
+/// a digital signature, which the new bytes would break.
+const DROPPED: [Tag; 10] = [
     Tag::new(b"glyf"),
     Tag::new(b"loca"),
     Tag::new(b"cvt "),
@@ -24,6 +28,7 @@ const DROPPED: [Tag; 9] = [
     Tag::new(b"LTSH"),
     Tag::new(b"VDMX"),
     Tag::new(b"gasp"),
+    Tag::new(b"DSIG"),
 ];
 
 /// Integer glyph bounds: the exact bounds of the CFF outline, rounded outwards.
@@ -38,12 +43,13 @@ struct Bounds {
 /// Turns a static TTF compiled by fontc into a CFF-based OTF.
 ///
 /// `outlines` must hold the decomposed cubic outline of every glyph, under the name in
-/// the TTF's `post` table. The result keeps the TTF's glyph order and every table
-/// except `glyf`, `loca`, `cvt `, `fpgm`, `prep`, `hdmx`, `LTSH`, `VDMX` and `gasp`.
-/// It rewrites `maxp` (version 0.5), `post` (version 3.0, same metrics), the `head`
-/// bounding box, the `hmtx` left side bearings and the `hhea` extents from the cubic
-/// bounds. `OS/2` is kept as is: fontc derives none of its fields from glyph bounds.
-/// The sfnt version becomes `OTTO`, and the checksums are recomputed.
+/// the TTF's `post` table; only a `.notdef` that fontc made up may be missing (it is
+/// then taken from the TTF). The result keeps the TTF's glyph order and every table
+/// except `glyf`, `loca`, `cvt `, `fpgm`, `prep`, `hdmx`, `LTSH`, `VDMX`, `gasp` and
+/// `DSIG`. It rewrites `maxp` (version 0.5), `post` (version 3.0, same metrics), the
+/// `head` bounding box, the `hmtx` left side bearings and the `hhea` extents from the
+/// cubic bounds. `OS/2` is kept as is: fontc derives none of its fields from glyph
+/// bounds. The sfnt version becomes `OTTO`, and the checksums are recomputed.
 pub fn ttf_to_otf(ttf: &[u8], outlines: &SourceOutlines) -> Result<Vec<u8>, CompileError> {
     let font = FontRef::new(ttf)?;
     if font.table_data(Tag::new(b"fvar")).is_some() {
@@ -52,17 +58,30 @@ pub fn ttf_to_otf(ttf: &[u8], outlines: &SourceOutlines) -> Result<Vec<u8>, Comp
     if font.table_data(Tag::new(b"vmtx")).is_some() {
         return Err(transplant("vertical metrics (vmtx) are not supported yet"));
     }
+    if [b"CFF ", b"CFF2"]
+        .iter()
+        .any(|tag| font.table_data(Tag::new(tag)).is_some())
+    {
+        return Err(transplant("the font already has CFF outlines"));
+    }
+    let long_metrics = font.hhea()?.number_of_h_metrics();
+    let num_glyphs = font.maxp()?.num_glyphs();
+    if long_metrics == 0 || long_metrics > num_glyphs {
+        return Err(transplant(&format!(
+            "hhea numberOfHMetrics is {long_metrics}, not 1 to {num_glyphs}"
+        )));
+    }
     let read_hmtx = font.hmtx()?;
     let glyphs = glyphs(&font, &read_hmtx, outlines)?;
 
     let mut cff = CffBuilder::new(postscript_name(&font)?, font.head()?.units_per_em());
     for glyph in &glyphs {
-        cff = cff.glyph(glyph.name, glyph.advance, glyph.path);
+        cff = cff.glyph(glyph.name, glyph.advance, &glyph.path);
     }
     let cff = cff.build()?;
     let bounds = glyphs
         .iter()
-        .map(|g| glyph_bounds(g.name, g.path))
+        .map(|g| glyph_bounds(g.name, &g.path))
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut builder = FontBuilder::new();
@@ -96,10 +115,11 @@ fn transplant(reason: &str) -> CompileError {
 struct GlyphSource<'a> {
     name: &'a str,
     advance: u16,
-    path: &'a BezPath,
+    path: Cow<'a, BezPath>,
 }
 
-/// Every glyph in the TTF's order: its `post` name, advance and source outline.
+/// Every glyph in the TTF's order: its `post` name, advance and source outline (for a
+/// `.notdef` the source lacks, the one fontc made up).
 fn glyphs<'a>(
     font: &FontRef<'a>,
     hmtx: &ReadHmtx,
@@ -114,9 +134,11 @@ fn glyphs<'a>(
             let advance = hmtx
                 .advance(GlyphId::new(gid.into()))
                 .ok_or_else(|| transplant(&format!("glyph {gid} has no advance")))?;
-            let path = outlines
-                .get(name)
-                .ok_or_else(|| CompileError::MissingOutline(name.to_owned()))?;
+            let path = match outlines.get(name) {
+                Some(path) => Cow::Borrowed(path),
+                None if gid == 0 && name == ".notdef" => Cow::Owned(synthesized_notdef(font)?),
+                None => return Err(CompileError::MissingOutline(name.to_owned())),
+            };
             Ok(GlyphSource {
                 name,
                 advance,
@@ -124,6 +146,43 @@ fn glyphs<'a>(
             })
         })
         .collect()
+}
+
+/// fontc makes up a `.notdef` when the source has none (fontir `synthesize_notdef`): a
+/// box of straight lines. Its points are read from the TTF's `glyf`, and its contours
+/// reversed back from the TrueType direction (clockwise) to the PostScript one.
+fn synthesized_notdef(font: &FontRef) -> Result<BezPath, CompileError> {
+    let glyph = font.loca(None)?.get_glyf(GlyphId::NOTDEF, &font.glyf()?)?;
+    let mut path = BezPath::new();
+    let simple = match glyph {
+        None => return Ok(path),
+        Some(Glyph::Composite(_)) => return Err(transplant(".notdef in 'glyf' is a composite")),
+        Some(Glyph::Simple(simple)) => simple,
+    };
+    let points: Vec<CurvePoint> = simple.points().collect();
+    let mut start = 0;
+    for end in simple.end_pts_of_contours() {
+        let end = usize::from(end.get());
+        let contour = points
+            .get(start..=end)
+            .ok_or_else(|| transplant(".notdef in 'glyf' has a malformed contour"))?;
+        start = end + 1;
+        for (i, point) in contour.iter().enumerate() {
+            if !point.on_curve {
+                return Err(transplant(
+                    ".notdef in 'glyf' has curves; expected fontc's box",
+                ));
+            }
+            let p = (f64::from(point.x), f64::from(point.y));
+            if i == 0 {
+                path.move_to(p);
+            } else {
+                path.line_to(p);
+            }
+        }
+        path.close_path();
+    }
+    Ok(path.reverse_subpaths())
 }
 
 /// The PostScript name (name ID 6), preferably the Windows English record.

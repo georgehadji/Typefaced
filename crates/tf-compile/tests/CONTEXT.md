@@ -9,7 +9,7 @@ Up: [tf-compile/CONTEXT.md](../CONTEXT.md).
 | `compile_fixture.rs` | Compiles `tests/fixtures/min.ufo` and checks the TTF with skrifa: glyph count, `cmap`, the contours of `A`. Also checks the error cases: unsupported extension, a fontc panic, a missing source |
 | `corpus.rs` | Corpus-backed checks: every style of the static family compiles, and the variable family fails on its per-master feature files but compiles with a weight axis once they are removed |
 | `designspace_v5.rs` | Writes small designspace 5 documents and pins what fontc makes of each feature (discrete axis, labels, mappings, variable-fonts, instances). A changed outcome after a fontc upgrade fails on purpose |
-| `otf.rs` | Spike 2 round trip: converts the fixture (and, ignored, every corpus static style) to OTF and checks that skrifa draws every glyph with the rounded, decomposed source points, `Aacute` = `A` + `acute` moved by the offset, advances, `head`/`hmtx`/`hhea` bounds, `cmap`/`name`/`OS/2`/`GSUB`/`GPOS`/`GDEF`/`STAT` byte-identical, dropped tables, `maxp` 0.5, `post` 3.0, checksums, CFF names. Also the error cases |
+| `otf.rs` | Spike 2 round trip: converts the fixture (and, ignored, every corpus static style) to OTF and checks that skrifa draws every glyph with the rounded, decomposed source points, `Aacute` = `A` + `acute` moved by the offset, advances, `head`/`hmtx`/`hhea` bounds, `cmap`/`name`/`OS/2`/`GSUB`/`GPOS`/`GDEF`/`STAT` byte-identical, dropped tables, `maxp` 0.5, `post` 3.0, checksums, CFF names; a source without `.notdef` (fontc's box, reversed); `DSIG` dropped. Also the error cases |
 
 | Subfolder | Context |
 |---|---|

@@ -2,16 +2,20 @@
 //! components decomposed through their transforms, keyed by the glyph name fontc
 //! writes into the font.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use kurbo::{Affine, BezPath};
-use norad::{DataRequest, Font, Glyph, Layer, Plist};
+use norad::{Contour, DataRequest, Font, Glyph, Layer, Plist, PointType};
 
 use crate::CompileError;
 
-/// Deeper nesting than this is treated as a component cycle.
+/// Deeper component nesting is refused (it would only come from a broken source).
 const MAX_COMPONENT_DEPTH: usize = 64;
+/// The most path elements one decomposed glyph may hold: components that reuse each
+/// other can multiply an outline exponentially. A charstring (at most 65535 bytes, and
+/// about 2 or more per element) could not hold many more anyway.
+const MAX_ELEMENTS: usize = 1 << 16;
 
 /// Decomposed cubic outlines by glyph name. Every component is replaced by its base
 /// glyph's contours, transformed (contours reversed when the transform mirrors), so no
@@ -35,9 +39,19 @@ impl SourceOutlines {
     fn from_font(font: &Font) -> Result<Self, CompileError> {
         let layer = font.default_layer();
         let rename = production_names(&font.lib);
+        let skipped = skipped_glyphs(&font.lib);
+        let mut decomposer = Decomposer {
+            layer,
+            done: HashMap::new(),
+            active: Vec::new(),
+        };
         let mut paths = HashMap::new();
         for glyph in layer.iter() {
-            let path = decompose(layer, glyph, 0)?;
+            let path = decomposer.outline(glyph)?;
+            // fontc leaves these glyphs out of the font (they stay component bases).
+            if skipped.contains(glyph.name().as_str()) {
+                continue;
+            }
             let name = final_name(glyph.name().as_str(), rename.as_ref());
             if paths.insert(name.clone(), path).is_some() {
                 // fontc would add a `.N` suffix; this reader does not follow it.
@@ -93,37 +107,81 @@ fn final_name(name: &str, rename: Option<&HashMap<String, String>>) -> String {
     }
 }
 
-/// The glyph's contours followed by its components' outlines, recursively.
-fn decompose(layer: &Layer, glyph: &Glyph, depth: usize) -> Result<BezPath, CompileError> {
-    let error = |reason: String| CompileError::Outline {
-        glyph: glyph.name().to_string(),
-        reason,
-    };
-    if depth > MAX_COMPONENT_DEPTH {
-        return Err(error("components nest too deeply or form a cycle".into()));
-    }
-    let mut path = BezPath::new();
-    for contour in &glyph.contours {
-        if !contour.is_closed() {
-            return Err(error("open contour: CFF closes every contour".into()));
+/// The glyphs fontc leaves out of the font (`public.skipExportGlyphs`).
+fn skipped_glyphs(lib: &Plist) -> HashSet<String> {
+    lib.get("public.skipExportGlyphs")
+        .and_then(|v| v.as_array())
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(|n| Some(n.as_string()?.to_owned()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Decomposes glyphs once each: a base used by many composites is not redone.
+struct Decomposer<'a> {
+    layer: &'a Layer,
+    done: HashMap<&'a str, BezPath>,
+    /// The glyphs being decomposed, outermost first: a repeat is a cycle.
+    active: Vec<&'a str>,
+}
+
+impl<'a> Decomposer<'a> {
+    /// The glyph's contours followed by its components' outlines, recursively.
+    fn outline(&mut self, glyph: &'a Glyph) -> Result<BezPath, CompileError> {
+        let name = glyph.name().as_str();
+        if let Some(path) = self.done.get(name) {
+            return Ok(path.clone());
         }
-        path.extend(contour.to_kurbo().map_err(|e| error(e.to_string()))?);
-    }
-    for component in &glyph.components {
-        let base_name = component.base.as_str();
-        let base = layer
-            .get_glyph(base_name)
-            .ok_or_else(|| error(format!("component base {base_name:?} is missing")))?;
-        let transform = Affine::from(component.transform);
-        let outline = transform * decompose(layer, base, depth + 1)?;
-        // A mirroring transform reverses the direction; flip it back (as fontc does).
-        if transform.determinant() < 0.0 {
-            path.extend(outline.reverse_subpaths());
-        } else {
-            path.extend(outline);
+        let error = |reason: String| CompileError::Outline {
+            glyph: name.to_owned(),
+            reason,
+        };
+        if self.active.contains(&name) || self.active.len() > MAX_COMPONENT_DEPTH {
+            return Err(error("components nest too deeply or form a cycle".into()));
         }
+        self.active.push(name);
+        let mut path = BezPath::new();
+        for contour in &glyph.contours {
+            path.extend(contour_path(contour).map_err(error)?);
+        }
+        for component in &glyph.components {
+            let base_name = component.base.as_str();
+            let base = self
+                .layer
+                .get_glyph(base_name)
+                .ok_or_else(|| error(format!("component base {base_name:?} is missing")))?;
+            let transform = Affine::from(component.transform);
+            let outline = transform * self.outline(base)?;
+            // A mirroring transform reverses the direction; flip it back (as fontc does).
+            if transform.determinant() < 0.0 {
+                path.extend(outline.reverse_subpaths());
+            } else {
+                path.extend(outline);
+            }
+            if path.elements().len() > MAX_ELEMENTS {
+                return Err(error(format!(
+                    "the decomposed outline has more than {MAX_ELEMENTS} elements"
+                )));
+            }
+        }
+        self.active.pop();
+        self.done.insert(name, path.clone());
+        Ok(path)
     }
-    Ok(path)
+}
+
+fn contour_path(contour: &Contour) -> Result<BezPath, String> {
+    if !contour.is_closed() {
+        return Err("open contour: CFF closes every contour".into());
+    }
+    // norad turns such a contour (valid in TrueType) into a bare move: it would vanish.
+    if !contour.points.is_empty() && contour.points.iter().all(|p| p.typ == PointType::OffCurve) {
+        return Err("a contour without on-curve points is not supported".into());
+    }
+    contour.to_kurbo().map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -339,6 +397,66 @@ mod tests {
         let message = outline_error(vec![glyph("a", vec![open], vec![])]);
 
         assert!(message.contains("open contour"), "{message}");
+    }
+
+    #[test]
+    fn components_that_multiply_beyond_the_element_limit_are_an_error() {
+        // g1 uses g0 twice, g2 uses g1 twice…: g24 would hold 2^24 triangles.
+        let mut glyphs = vec![glyph("g0", vec![triangle()], vec![])];
+        for i in 1..=24 {
+            let base = format!("g{}", i - 1);
+            glyphs.push(glyph(
+                &format!("g{i}"),
+                vec![],
+                vec![
+                    component(&base, translate(0.0, 0.0)),
+                    component(&base, translate(1.0, 0.0)),
+                ],
+            ));
+        }
+
+        let message = outline_error(glyphs);
+
+        assert!(message.contains("elements"), "{message}");
+    }
+
+    #[test]
+    fn a_contour_without_on_curve_points_is_an_error() {
+        // A valid TrueType-style quadratic contour that norad turns into a bare move.
+        let off_curve_only = Contour::new(
+            vec![
+                point(0.0, 0.0, PointType::OffCurve),
+                point(100.0, 0.0, PointType::OffCurve),
+                point(100.0, 100.0, PointType::OffCurve),
+            ],
+            None,
+        );
+
+        let message = outline_error(vec![glyph("o", vec![off_curve_only], vec![])]);
+
+        assert!(message.contains("on-curve"), "{message}");
+    }
+
+    #[test]
+    fn glyphs_fontc_does_not_export_are_bases_but_not_outlines() {
+        let mut font = font(vec![
+            glyph("a.draft", vec![triangle()], vec![]),
+            glyph("a", vec![], vec![component("a.draft", translate(0.0, 0.0))]),
+        ]);
+        let mut names = Plist::new();
+        names.insert("a.draft".into(), "a".into());
+        font.lib
+            .insert("public.postscriptNames".into(), names.into());
+        font.lib.insert(
+            "public.skipExportGlyphs".into(),
+            vec!["a.draft".into()].into(),
+        );
+
+        let outlines = SourceOutlines::from_font(&font).unwrap();
+
+        let keys: Vec<&str> = outlines.iter().map(|(name, _)| name).collect();
+        assert_eq!(keys, ["a"]);
+        assert_ne!(signed_area(outlines.get("a").unwrap()), 0.0);
     }
 
     #[test]
