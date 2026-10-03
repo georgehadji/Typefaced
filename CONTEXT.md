@@ -34,6 +34,7 @@ and version over typed IPC. The status of each step is in the table at the top o
 | Full architecture and roadmap | `docs/implementation-plan.md` |
 | Current work and what is left | `plans/` (status table) |
 | IPC command types | `crates/tf-commands/src/lib.rs` → `packages/bindings/src/index.ts` |
+| Compiling a UFO or designspace to TTF | `crates/tf-compile/src/lib.rs` |
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
 | UI code | `apps/desktop/src/` |
 | Repository gates (layering, licenses, coverage, corpus) | `xtask/src/` |
@@ -57,6 +58,11 @@ and version over typed IPC. The status of each step is in the table at the top o
 | `crates/` | [CONTEXT.md](crates/CONTEXT.md) | Rust library crates of the engine |
 | `crates/tf-commands/` | [CONTEXT.md](crates/tf-commands/CONTEXT.md) | Typed command catalog crate (application layer) |
 | `crates/tf-commands/src/` | [CONTEXT.md](crates/tf-commands/src/CONTEXT.md) | Command and payload types |
+| `crates/tf-compile/` | [CONTEXT.md](crates/tf-compile/CONTEXT.md) | Font compiler crate (adapter layer): UFO and designspace to TTF through fontc |
+| `crates/tf-compile/src/` | [CONTEXT.md](crates/tf-compile/src/CONTEXT.md) | The compile function and its error type |
+| `crates/tf-compile/examples/` | [CONTEXT.md](crates/tf-compile/examples/CONTEXT.md) | Timing programs for Spike 1 |
+| `crates/tf-compile/tests/` | [CONTEXT.md](crates/tf-compile/tests/CONTEXT.md) | Fixture, corpus and designspace 5 tests |
+| `crates/tf-compile/tests/data/` | [CONTEXT.md](crates/tf-compile/tests/data/CONTEXT.md) | Input files for the tests |
 | `docs/` | [CONTEXT.md](docs/CONTEXT.md) | Research, implementation plan |
 | `docs/adr/` | [CONTEXT.md](docs/adr/CONTEXT.md) | Architecture decision records |
 | `docs/spikes/` | [CONTEXT.md](docs/spikes/CONTEXT.md) | Spike reports |
@@ -155,9 +161,21 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   ├── tsconfig.json
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
-├── crates/tf-commands/
-│   ├── src/lib.rs
-│   └── Cargo.toml
+├── crates/
+│   ├── tf-commands/
+│   │   ├── src/lib.rs
+│   │   └── Cargo.toml
+│   └── tf-compile/
+│       ├── examples/
+│       │   ├── baseline.rs
+│       │   └── compile.rs
+│       ├── src/lib.rs
+│       ├── tests/
+│       │   ├── data/discrete-axis.designspace
+│       │   ├── compile_fixture.rs
+│       │   ├── corpus.rs
+│       │   └── designspace_v5.rs
+│       └── Cargo.toml
 ├── docs/
 │   ├── adr/
 │   │   ├── 0001-desktop-shell-tauri-2-webview2.md
@@ -181,7 +199,9 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── 0019-clean-room-spacing-algorithm.md
 │   │   ├── README.md
 │   │   └── template.md
-│   ├── spikes/spike-6-collections.md
+│   ├── spikes/
+│   │   ├── spike-1-fontc.md
+│   │   └── spike-6-collections.md
 │   ├── implementation-plan.md
 │   └── research.md
 ├── packages/bindings/

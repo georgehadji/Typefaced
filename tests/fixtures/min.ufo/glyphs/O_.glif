@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Outer ellipse, counter-clockwise. -->
+<!-- Inner ellipse, clockwise. -->
 <glyph name="O" format="2">
   <advance width="640"/>
   <unicode hex="004F"/>
   <outline>
-    <!-- Outer ellipse, counter-clockwise. -->
     <contour>
       <point x="320" y="-10" type="curve"/>
       <point x="475" y="-10"/>
@@ -18,7 +19,6 @@
       <point x="40" y="151"/>
       <point x="165" y="-10"/>
     </contour>
-    <!-- Inner ellipse, clockwise. -->
     <contour>
       <point x="320" y="100" type="curve"/>
       <point x="226" y="100"/>

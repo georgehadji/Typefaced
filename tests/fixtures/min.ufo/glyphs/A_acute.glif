@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- The accent sits above the apex: a pure translation. -->
 <glyph name="Aacute" format="2">
   <advance width="600"/>
   <unicode hex="00C1"/>
   <outline>
     <component base="A"/>
-    <!-- The accent sits above the apex: a pure translation. -->
     <component base="acute" xOffset="120" yOffset="200"/>
   </outline>
 </glyph>
