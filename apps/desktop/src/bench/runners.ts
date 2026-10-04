@@ -3,13 +3,20 @@
 // excluded from unit-test coverage and validated by running `#/bench` (docs/spikes/spike-3-ipc.md).
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { hitTest, translatePoints } from "@typefaced/geometry-wasm";
+import {
+  buildPaths,
+  CACHED_DRAW,
+  type DrawSpec,
+  makeScene,
+  paintFrame,
+  type Scene,
+} from "./draw";
 import { loadKernel } from "./kernel";
 import {
   decodeHit,
   innerBox,
   makeGlyph,
   makeNestedGlyph,
-  OFF_CURVE,
   type PackedOutline,
 } from "./outline";
 import { type Summary, summarize } from "./stats";
@@ -62,6 +69,8 @@ export interface DragResult {
   workTime: Summary;
   /** Frames whose delta exceeded 1.5 frames, i.e. at least one missed vsync. */
   longFrames: number;
+  /** The drawing settings, for a probe run (see `DRAG_PROBES` in `draw.ts`). */
+  draw?: DrawSpec;
 }
 
 /**
@@ -275,56 +284,6 @@ export async function benchHitTest(
   };
 }
 
-/** The outline and the point handles of a run of contours, as drawable paths. */
-interface GlyphPaths {
-  outline: Path2D;
-  handles: Path2D;
-}
-
-/** Builds the paths of contours `fromContour` up to (not including) `toContour`. */
-function buildPaths(
-  { coords, flags, contourEnds }: PackedOutline,
-  fromContour: number,
-  toContour: number,
-): GlyphPaths {
-  const outline = new Path2D();
-  const handles = new Path2D();
-  for (let c = fromContour; c < toContour; c++) {
-    const first = c === 0 ? 0 : contourEnds[c - 1] + 1;
-    const last = contourEnds[c];
-    outline.moveTo(coords[2 * first], coords[2 * first + 1]);
-    let i = first + 1;
-    while (i <= last) {
-      // The bench glyph's cubic segments are always off, off, curve.
-      if (flags[i] === OFF_CURVE && i + 2 <= last) {
-        outline.bezierCurveTo(
-          coords[2 * i],
-          coords[2 * i + 1],
-          coords[2 * i + 2],
-          coords[2 * i + 3],
-          coords[2 * i + 4],
-          coords[2 * i + 5],
-        );
-        i += 3;
-      } else {
-        outline.lineTo(coords[2 * i], coords[2 * i + 1]);
-        i += 1;
-      }
-    }
-    outline.closePath();
-    for (let p = first; p <= last; p++) {
-      handles.rect(coords[2 * p] - 1.5, coords[2 * p + 1] - 1.5, 3, 3);
-    }
-  }
-  return { outline, handles };
-}
-
-function paint(ctx: CanvasRenderingContext2D, paths: GlyphPaths) {
-  ctx.fill(paths.outline, "nonzero");
-  ctx.stroke(paths.outline);
-  ctx.fill(paths.handles);
-}
-
 /** Empty animation frames: the cadence this window can reach before any work is done. */
 export function benchFrameBaseline(durationMs = 3000): Promise<Summary> {
   return new Promise((resolve) => {
@@ -346,35 +305,66 @@ export function benchFrameBaseline(durationMs = 3000): Promise<Summary> {
 const DRAGGED_CONTOURS = 10;
 
 /**
+ * Puts a fresh canvas in place of `canvas` for a probe, so its context attributes apply
+ * (a canvas keeps the attributes of its first `getContext`). Returns the fresh canvas and
+ * a function that puts the original back.
+ */
+function probeCanvas(canvas: HTMLCanvasElement, size: number) {
+  const fresh = canvas.cloneNode() as HTMLCanvasElement;
+  fresh.style.width = `${size}px`;
+  fresh.style.height = `${size}px`;
+  canvas.replaceWith(fresh);
+  return { fresh, restore: () => fresh.replaceWith(canvas) };
+}
+
+/**
  * A synthetic drag: every animation frame moves the pointer along a circle, hit-tests
  * under it and translates the selected contours with the WASM kernel, then draws:
  * - `compute`: nothing (the cadence the kernel alone allows);
  * - `rebuild`: the whole moved glyph, with new `Path2D` objects built every frame;
  * - `cached`: `Path2D` objects built once per glyph revision (ADR-0013); the dragged
  *   contours are drawn with a canvas transform and the rest are not rebuilt.
+ *
+ * `probe` (with `cached`) changes how the frame is drawn, on a fresh canvas: see
+ * `DRAG_PROBES` in `draw.ts`. The result then carries the `draw` settings used.
  */
 export async function benchDrag(
   canvas: HTMLCanvasElement,
   durationMs = 10_000,
   mode: DragMode = "rebuild",
+  probe?: Partial<DrawSpec>,
 ): Promise<DragResult> {
   await loadKernel();
   const glyph = makeGlyph();
   const draggedPoints = glyph.contourEnds[DRAGGED_CONTOURS - 1] + 1;
   const selection = Uint32Array.from({ length: draggedPoints }, (_, i) => i);
-  const still =
-    mode === "cached"
-      ? buildPaths(glyph, DRAGGED_CONTOURS, glyph.contourEnds.length)
-      : undefined;
-  const dragged =
-    mode === "cached" ? buildPaths(glyph, 0, DRAGGED_CONTOURS) : undefined;
+  const spec: DrawSpec = { ...CACHED_DRAW, ...probe };
+  const swap = probe ? probeCanvas(canvas, spec.size) : undefined;
+  const target = swap?.fresh ?? canvas;
   const dpr = window.devicePixelRatio || 1;
-  const size = canvas.clientWidth;
-  canvas.width = Math.round(size * dpr);
-  canvas.height = Math.round(size * dpr);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas2D is unavailable");
-  const scale = (size * dpr) / 1000;
+  const size = target.clientWidth;
+  target.width = Math.round(size * dpr);
+  target.height = Math.round(size * dpr);
+  const base = {
+    dx: 0,
+    dy: 0,
+    scale: (size * dpr) / 1000,
+    height: target.height,
+  };
+  let ctx: CanvasRenderingContext2D;
+  let scene: Scene | undefined;
+  try {
+    const context = target.getContext("2d", spec.context);
+    if (!context) throw new Error("Canvas2D is unavailable");
+    ctx = context;
+    scene =
+      mode === "cached"
+        ? makeScene(glyph, DRAGGED_CONTOURS, spec, base)
+        : undefined;
+  } catch (error) {
+    swap?.restore(); // A failed probe must not leave the page without its canvas.
+    throw error;
+  }
   const deltas: number[] = [];
   const work: number[] = [];
   return new Promise((resolve) => {
@@ -397,39 +387,35 @@ export async function benchDrag(
         HIT_RADIUS,
       );
       const moved = translatePoints(glyph.coords, selection, dx, dy);
-      if (mode !== "compute") {
-        ctx.setTransform(scale, 0, 0, -scale, 0, canvas.height);
-        ctx.clearRect(0, 0, 1000, 1000);
-        ctx.fillStyle = "rgba(40, 40, 40, 0.25)";
-        ctx.strokeStyle = "#222";
-        ctx.lineWidth = 1 / scale;
-        if (still && dragged) {
-          paint(ctx, still);
-          ctx.translate(dx, dy);
-          paint(ctx, dragged);
-        } else {
-          const paths = buildPaths(
-            { ...glyph, coords: moved },
-            0,
-            glyph.contourEnds.length,
-          );
-          paint(ctx, paths);
-        }
+      if (scene) {
+        paintFrame(ctx, scene, spec, { ...base, dx, dy });
+      } else if (mode === "rebuild") {
+        const all = { ...glyph, coords: moved };
+        const paths = buildPaths(all, 0, glyph.contourEnds.length, true);
+        // Nothing is dragged separately, so no transform (as before the probes).
+        paintFrame(
+          ctx,
+          { still: [paths], dragged: [] },
+          { ...spec, transform: false },
+          base,
+        );
       }
       work.push(performance.now() - t0);
       if (now - startedAt < durationMs) {
         requestAnimationFrame(frame);
-      } else {
-        resolve({
-          mode,
-          durationMs: now - startedAt,
-          frames: deltas.length,
-          selectedPoints: selection.length,
-          frameTime: summarize(deltas),
-          workTime: summarize(work),
-          longFrames: deltas.filter((ms) => ms > 1.5 * FRAME_MS).length,
-        });
+        return;
       }
+      swap?.restore();
+      resolve({
+        mode,
+        durationMs: now - startedAt,
+        frames: deltas.length,
+        selectedPoints: selection.length,
+        frameTime: summarize(deltas),
+        workTime: summarize(work),
+        longFrames: deltas.filter((ms) => ms > 1.5 * FRAME_MS).length,
+        ...(probe ? { draw: spec } : {}),
+      });
     };
     requestAnimationFrame(frame);
   });

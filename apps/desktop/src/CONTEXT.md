@@ -9,7 +9,7 @@ React UI of the desktop app. It talks to Rust only through the generated
 | `App.tsx` | Root component: calls `commands.appInfo()` and shows "name vVersion", or an alert with the reason when the call fails; ignores results that arrive after unmount |
 | `App.test.tsx` | Vitest + Testing Library tests for `App` with the bindings mocked: success, `Error` and string rejections, late results after unmount |
 | `App.css` | Global styles: light and dark color scheme, centered layout |
-| `vite-env.d.ts` | Vite client type references |
+| `vite-env.d.ts` | Vite client type references; declares `VITE_BENCH_ONLY` (`drag` runs only the drag benchmarks on `#/bench`) |
 
 | Subfolder | Context |
 |---|---|

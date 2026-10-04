@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import BenchPage from "./BenchPage";
+import { DRAG_PROBES } from "./draw";
 import * as runners from "./runners";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -20,6 +21,7 @@ describe("BenchPage", () => {
   afterEach(() => {
     cleanup();
     vi.resetAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("runs every benchmark once and reports the results to Rust", async () => {
@@ -56,6 +58,15 @@ describe("BenchPage", () => {
         mode,
       );
     }
+    // Every drawing probe runs once, for 5 s, on top of the cached drag.
+    for (const probe of Object.values(DRAG_PROBES)) {
+      expect(runners.benchDrag).toHaveBeenCalledWith(
+        expect.any(HTMLCanvasElement),
+        5_000,
+        "cached",
+        probe,
+      );
+    }
     expect(report).toHaveBeenCalledWith("bench_report", {
       results: expect.objectContaining({
         ping: { ping: 1 },
@@ -73,6 +84,39 @@ describe("BenchPage", () => {
           rebuild: { mode: "rebuild" },
           cached: { mode: "cached" },
         },
+        dragProbes: expect.objectContaining({
+          control: { mode: "cached" },
+          stillBitmapSelectedHandles: { mode: "cached" },
+        }),
+      }),
+    });
+  });
+
+  it("runs only the frame and drag benchmarks when VITE_BENCH_ONLY is drag", async () => {
+    vi.stubEnv("VITE_BENCH_ONLY", "drag");
+    vi.mocked(runners.benchFrameBaseline).mockResolvedValue({
+      raf: 1,
+    } as never);
+    vi.mocked(runners.benchDrag).mockImplementation(
+      async (_canvas, _ms, mode) => ({ mode }) as never,
+    );
+    report.mockResolvedValue(undefined);
+
+    render(<BenchPage />);
+
+    expect(await screen.findByText(/reported to Rust/)).toBeTruthy();
+    expect(runners.benchPing).not.toHaveBeenCalled();
+    expect(runners.benchCommit).not.toHaveBeenCalled();
+    expect(runners.benchHitTest).not.toHaveBeenCalled();
+    const results = report.mock.calls.find(([c]) => c === "bench_report")?.[1];
+    expect(results).toEqual({
+      results: expect.not.objectContaining({ ping: expect.anything() }),
+    });
+    expect(results).toEqual({
+      results: expect.objectContaining({
+        frameBaseline: { raf: 1 },
+        drag: expect.any(Object),
+        dragProbes: expect.any(Object),
       }),
     });
   });

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
+import { DRAG_PROBES } from "./draw";
 import {
   benchCommit,
   benchDrag,
@@ -18,6 +19,46 @@ async function sendToRust(command: string, args: Record<string, unknown>) {
   } catch {
     // Nothing more can be done from the page.
   }
+}
+
+/** The IPC and hit-test benchmarks, in the order of the results JSON. */
+async function benchIpcAndHitTest(step: (line: string) => void) {
+  step("empty IPC round trip (1,000 × main thread, 1,000 × async runtime)…");
+  const ping = await benchPing();
+  step(
+    "commit round-trip (1,000 × JSON, 1,000 × binary, at 1 to 5,000 points)…",
+  );
+  const commit = await benchCommit();
+  step("patch stream, 1-point patches (60 Hz, 10 s)…");
+  const streamSmall = await benchPatchStream(1);
+  step("patch stream, 5,000-point patches (60 Hz, 10 s)…");
+  const streamLarge = await benchPatchStream(5000);
+  step(
+    "hit test (1,000 calls, radius 8; then radius 1, which finds segments)…",
+  );
+  const hitTest = await benchHitTest();
+  const hitTestSegments = await benchHitTest(1000, 1);
+  step(
+    "hit test, worst case: few large nested contours (2 x 2,500 and 5 x 1,000 points)…",
+  );
+  const hitTestWorstCase = {} as Record<
+    HitLayout,
+    { radius8: unknown; radius1: unknown }
+  >;
+  for (const layout of ["nested2x2500", "nested5x1000"] as const) {
+    hitTestWorstCase[layout] = {
+      radius8: await benchHitTest(1000, 8, layout),
+      radius1: await benchHitTest(1000, 1, layout),
+    };
+  }
+  return {
+    ping,
+    commit,
+    stream: { small: streamSmall, large: streamLarge },
+    hitTest,
+    hitTestSegments,
+    hitTestWorstCase,
+  };
 }
 
 /** Dev-only page (`#/bench`): runs every M0 Step 8 benchmark once, then reports to Rust. */
@@ -46,36 +87,10 @@ export default function BenchPage() {
         visibility: document.visibilityState,
         hasFocus: document.hasFocus(),
       };
-      step(
-        "empty IPC round trip (1,000 × main thread, 1,000 × async runtime)…",
-      );
-      const ping = await benchPing();
-      step(
-        "commit round-trip (1,000 × JSON, 1,000 × binary, at 1 to 5,000 points)…",
-      );
-      const commit = await benchCommit();
-      step("patch stream, 1-point patches (60 Hz, 10 s)…");
-      const streamSmall = await benchPatchStream(1);
-      step("patch stream, 5,000-point patches (60 Hz, 10 s)…");
-      const streamLarge = await benchPatchStream(5000);
-      step(
-        "hit test (1,000 calls, radius 8; then radius 1, which finds segments)…",
-      );
-      const hitTest = await benchHitTest();
-      const hitTestSegments = await benchHitTest(1000, 1);
-      step(
-        "hit test, worst case: few large nested contours (2 x 2,500 and 5 x 1,000 points)…",
-      );
-      const hitTestWorstCase = {} as Record<
-        HitLayout,
-        { radius8: unknown; radius1: unknown }
-      >;
-      for (const layout of ["nested2x2500", "nested5x1000"] as const) {
-        hitTestWorstCase[layout] = {
-          radius8: await benchHitTest(1000, 8, layout),
-          radius1: await benchHitTest(1000, 1, layout),
-        };
-      }
+      // VITE_BENCH_ONLY=drag (set when starting the dev server) runs only the frame and
+      // drag benchmarks, for drawing investigations; the default runs everything.
+      const dragOnly = import.meta.env.VITE_BENCH_ONLY === "drag";
+      const ipcAndHitTest = dragOnly ? {} : await benchIpcAndHitTest(step);
       step("empty animation frames (3 s)…");
       const frameBaseline = await benchFrameBaseline();
       step("drag, hit test and translate only (10 s)…");
@@ -84,17 +99,18 @@ export default function BenchPage() {
       const rebuild = await benchDrag(target, 10_000, "rebuild");
       step("drag, cached Path2D objects (10 s)…");
       const cached = await benchDrag(target, 10_000, "cached");
+      const dragProbes: Record<string, unknown> = {};
+      for (const [name, probe] of Object.entries(DRAG_PROBES)) {
+        step(`drag probe ${name} (5 s)…`);
+        dragProbes[name] = await benchDrag(target, 5_000, "cached", probe);
+      }
       const results = {
         environment,
         visibilityAfter: document.visibilityState,
-        ping,
-        commit,
-        stream: { small: streamSmall, large: streamLarge },
-        hitTest,
-        hitTestSegments,
-        hitTestWorstCase,
+        ...ipcAndHitTest,
         frameBaseline,
         drag: { compute, rebuild, cached },
+        dragProbes,
       };
       step(JSON.stringify(results, null, 2));
       await invoke("bench_report", { results });
