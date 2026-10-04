@@ -57,3 +57,13 @@ Report: [spike-3-ipc.md](../spikes/spike-3-ipc.md). Measured on one Windows lapt
 - **Commits are asynchronous and carry deltas.** The UI never blocks on a commit; it keeps its transient state until the patch arrives. Commits and patches carry the touched points, not whole outlines (100 points: p95 10.4 to 11.7 ms; whole 5,000-point glyph: 22 to 25 ms). Patches over a `Channel` are cheap when small (1-point patches arrive in about 1.5 ms) and miss a frame 8% to 24% of the time when they carry a whole glyph.
 - **Hit-test budget: met on a typical layout, not shown for the worst case** (see ADR-0013).
 - **Status stays Proposed.** It becomes Accepted when the manual run in the spike report's follow-ups shows the commit round trip within budget on idle hardware, or when the budget is re-stated, for example as "engine reducer and patch under 8 ms, the UI never waits".
+
+## Amendment (Spike 3 idle rerun, 2026-10-04)
+
+Report: [spike-3-ipc.md](../spikes/spike-3-ipc.md). The same benchmark, three runs on the idle machine (charger in, other programs closed, window in front).
+
+- **Hit-test budget: met** in the WebView, worst case included (see ADR-0013).
+- **The commit floor is WebView2's empty `invoke`.** An `invoke` that does nothing takes p50 5.6 to 6.2 ms and p95 7.1 to 9.0 ms. A 1-point binary commit has p95 7.8 to 8.5 ms and a 100-point one 8.1 to 8.7 ms, the same as the empty call: the reducer does not show. At 5,000 points binary p95 is 17.0 to 17.3 ms (JSON 46.0 to 47.6 ms). No payload format can bring the page-side round trip under 8 ms at p95 here.
+- **Proposed restated budget:** engine reducer + patch encode under 8 ms p95, measured in Rust; the UI never blocks on a commit; the page-side round trip is recorded, not gated. The binary-payload, asynchronous-commit and delta-patch rules of the 2026-10-03 amendment stay.
+- **Patch stream, idle:** 1-point patches arrive in p95 1.5 to 1.6 ms; 5,000-point patches in p95 12.5 to 13.0 ms, 4 to 5 of 600 late.
+- **Status stays Proposed.** The user decides whether to accept the restated budget. If accepted, this ADR can become Accepted; the Rust-side commit time is then measured to give the budget a number.

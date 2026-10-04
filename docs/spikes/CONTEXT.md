@@ -6,4 +6,4 @@ The spike code lives in `spikes/`. Up: [docs/CONTEXT.md](../CONTEXT.md).
 | File | What it does |
 |---|---|
 | `spike-6-collections.md` | Spike 6 report for ADR-0017: compares four glyph-table designs (naive `Arc<Vec>`, in-house chunked vector, `imbl::Vector`, `imbl::OrdMap`) on snapshot clone, single-glyph replace and memory of 200 undo snapshots, up to 65,535 glyphs |
-| `spike-3-ipc.md` | Spike 3 report for ADR-0002 and ADR-0013: IPC round trip (JSON vs binary), patch stream, WASM hit test and synthetic drag on a 5,000-point glyph; results, what failed, and the manual run still needed |
+| `spike-3-ipc.md` | Spike 3 report for ADR-0002 and ADR-0013: IPC round trip (JSON vs binary), patch stream, WASM hit test and synthetic drag on a 5,000-point glyph; idle and loaded results, why the cached drag ran at 30 fps (GPU facts, drawing probes, traces), the budgets restated, and the runs still needed |
