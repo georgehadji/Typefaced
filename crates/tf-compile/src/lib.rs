@@ -1,11 +1,19 @@
 //! Font compiler adapter: compiles UFO and designspace sources to TTF with fontc,
-//! linked in-process (ADR-0006). The formal `FontCompiler` port comes in M2.
+//! linked in-process (ADR-0006), and turns a static TTF into a CFF-based OTF by
+//! transplanting a `CFF ` table built from the cubic sources (ADR-0007). The formal
+//! `FontCompiler` port comes in M2.
+
+mod otf;
+mod source;
 
 use std::any::Any;
 use std::panic::UnwindSafe;
 use std::path::{Path, PathBuf};
 
 use fontc::{Input, Options};
+
+pub use otf::ttf_to_otf;
+pub use source::SourceOutlines;
 
 /// Why a compile failed.
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +28,31 @@ pub enum CompileError {
     /// such as a designspace 5 discrete axis.
     #[error("fontc panicked: {0}")]
     Panicked(String),
+    /// The UFO could not be read for its outlines.
+    #[error(transparent)]
+    Ufo(#[from] norad::error::FontLoadError),
+    /// A source glyph cannot become a CFF outline (open contour, missing component
+    /// base, component cycle, malformed contour).
+    #[error("glyph {glyph:?}: {reason}")]
+    Outline { glyph: String, reason: String },
+    /// Two source glyphs get the same production name.
+    #[error("two glyphs get the production name {0:?}")]
+    DuplicateProductionName(String),
+    /// A glyph of the TTF has no source outline.
+    #[error("no source outline for glyph {0:?}")]
+    MissingOutline(String),
+    /// The TTF cannot be parsed.
+    #[error("cannot read the TTF: {0}")]
+    Read(#[from] write_fonts::read::ReadError),
+    /// The TTF cannot become an OTF.
+    #[error("cannot convert the TTF to OTF: {0}")]
+    Transplant(String),
+    /// The CFF writer rejected the outlines or names.
+    #[error(transparent)]
+    Cff(#[from] tf_cff::CffError),
+    /// A rewritten table failed validation.
+    #[error(transparent)]
+    Write(#[from] write_fonts::BuilderError),
 }
 
 /// Compiles a `.ufo` or `.designspace` source (extension in any case) to TrueType bytes,
@@ -40,6 +73,24 @@ pub fn compile_to_ttf(source: &Path) -> Result<Vec<u8>, CompileError> {
         return Err(CompileError::UnsupportedSource(source.to_path_buf()));
     }
     capture_panic(|| compile(source))
+}
+
+/// Compiles a `.ufo` to a CFF-based OTF: fontc's TTF with its outlines replaced by
+/// the UFO's cubic outlines (see [`ttf_to_otf`]). A `.designspace` is rejected: it
+/// compiles to a variable font, which ships as TTF (ADR-0007).
+pub fn compile_to_otf(source: &Path) -> Result<Vec<u8>, CompileError> {
+    let is_ufo = source
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("ufo"));
+    if !is_ufo {
+        return Err(CompileError::Transplant(format!(
+            "OTF export needs a .ufo source, got '{}'",
+            source.display()
+        )));
+    }
+    let ttf = compile_to_ttf(source)?;
+    ttf_to_otf(&ttf, &SourceOutlines::from_ufo(source)?)
 }
 
 /// Runs `job` and turns a panic into `CompileError::Panicked`.
