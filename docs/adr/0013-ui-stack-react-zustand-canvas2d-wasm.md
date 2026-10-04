@@ -1,5 +1,5 @@
 # ADR-0013: UI stack: React + Zustand + imperative Canvas2D + WASM kernel
-Status: Proposed · Date: 2026-09-29
+Status: Accepted · Date: 2026-10-04
 
 Source: [implementation plan](../implementation-plan.md) §3.4, §4.2, §4.3, §5.2, §5.4, §7.1, §7.2, §7.3, §8.1, §10.4, §12.1, §12.2, §15 (R3); [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) Invariants, Steps 2 and 8.
 
@@ -70,3 +70,15 @@ Report: [spike-3-ipc.md](../spikes/spike-3-ipc.md), section "Why the cached drag
 - **A layered frame reaches the display's cadence.** Drawing the still contours once per glyph revision into an offscreen bitmap, copying it each frame, and drawing vectors only for the dragged contours and their handles gave frame p95 16.8 ms against an empty-frame p95 of 16.8 ms, script under 2.5 ms and about 6 ms of GPU raster per frame (`dragProbes.stillBitmapSelectedHandles`). These runs were made with an agent session active.
 - **Conditions proposed for acceptance** (they refine "`Path2D` objects are cached by glyph id and revision"): content that does not move during a gesture is drawn once per revision into a bitmap layer and copied each frame; vectors are drawn per frame only for what moves; point handles are drawn for the selection only.
 - **Status stays Proposed.** It can be accepted with these conditions when an idle run shows `dragProbes.stillBitmapSelectedHandles.frameTime.p95` within 2 ms of `frameBaseline.p95`.
+
+## Acceptance (2026-10-04)
+
+Accepted with the layering conditions above. The idle confirmation (three drag-only runs, `VITE_BENCH_ONLY=drag`, charger in, other programs closed) gave `dragProbes.stillBitmapSelectedHandles` frame p95 16.8, 16.9 and 16.8 ms against an empty-frame p95 of 16.9, 16.8 and 16.8 ms, with a maximum frame of 20 to 33 ms. `cached` as first designed stayed at p95 50.1 to 66.7 ms in the same runs.
+
+The canvas engine (M4) therefore:
+- draws content that does not move during a gesture once per glyph revision into a bitmap layer and copies it each frame;
+- draws vectors per frame only for what moves;
+- draws point handles for the selection only;
+- gets a frame-time regression test in the real WebView.
+
+Still open: a run under the bundled app's CSP (the first real consumer of the kernel, M4), and the one-time cost of building the still bitmap at the start of a drag.

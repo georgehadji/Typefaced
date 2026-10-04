@@ -1,5 +1,5 @@
 # ADR-0002: Rust engine owns document state; the UI is a replica
-Status: Proposed · Date: 2026-09-29
+Status: Accepted · Date: 2026-10-04
 
 Source: [implementation plan](../implementation-plan.md) §0, §2 (principle 1), §3.3, §3.4, §5.12, §7.2, §7.3, §8.1, §10.4, §15 (R3); [research](../research.md) §5; [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) Step 8.
 
@@ -67,3 +67,13 @@ Report: [spike-3-ipc.md](../spikes/spike-3-ipc.md). The same benchmark, three ru
 - **Proposed restated budget:** engine reducer + patch encode under 8 ms p95, measured in Rust; the UI never blocks on a commit; the page-side round trip is recorded, not gated. The binary-payload, asynchronous-commit and delta-patch rules of the 2026-10-03 amendment stay.
 - **Patch stream, idle:** 1-point patches arrive in p95 1.5 to 1.6 ms; 5,000-point patches in p95 12.5 to 13.0 ms, 4 to 5 of 600 late.
 - **Status stays Proposed.** The user decides whether to accept the restated budget. If accepted, this ADR can become Accepted; the Rust-side commit time is then measured to give the budget a number.
+
+## Acceptance (2026-10-04)
+
+Accepted by the user with the restated commit budget, which replaces the round-trip budget of §10.4 for this ADR:
+
+- **Gate:** engine reducer + patch encode under 8 ms p95, measured in Rust.
+- **The UI never blocks on a commit.** It keeps its transient state until the patch arrives.
+- **The page-side round trip is recorded, not gated.** Idle reference on the spike machine: p95 7.8 to 8.5 ms for a 1-point binary commit and 17.0 to 17.3 ms for 5,000 points, against an empty `invoke` of p95 7.1 to 9.0 ms.
+- The binary-payload, asynchronous-commit and delta-patch rules of the amendments above stay.
+- **Open:** the spike's reducer only swaps an `Arc`, so the Rust-side gate has no meaningful number yet. A Rust benchmark of decode, reducer and patch encode becomes the gate when the real reducers exist (M1).
