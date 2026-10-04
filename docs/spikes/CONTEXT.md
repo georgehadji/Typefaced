@@ -5,5 +5,9 @@ The spike code lives in `spikes/`. Up: [docs/CONTEXT.md](../CONTEXT.md).
 
 | File | What it does |
 |---|---|
+| `spike-1-fontc.md` | Spike 1 report for ADR-0006: runs fontc in-process through `crates/tf-compile/`, checks outputs with OTS, measures build time, binary size, compile speed and memory, and records the designspace and feature-file limits the UFO writer must respect |
+| `spike-2-cff.md` | Spike 2 report for ADR-0007: build-versus-reuse check (write-fonts, allsorts), the `tf-cff` writer and the TTF → OTF transplant, round-trip results for the fixture and Inria Sans (point differences, OTS, `ttx`, fontTools), size and speed, Windows Font Viewer result |
+| `spike-2-fontview-inria-sans.png` | Screenshot for the Spike 2 report: the Inria Sans Regular OTF opened in Windows Font Viewer |
+| `spike-5-boolean.md` | Spike 5 report for ADR-0008: compares skia PathOps and linesweeper for overlap removal on overlapping corpus glyphs, fixtures and synthetic edge cases: correctness (area error, left-over overlap, contour directions), speed, build cost and licenses |
 | `spike-6-collections.md` | Spike 6 report for ADR-0017: compares four glyph-table designs (naive `Arc<Vec>`, in-house chunked vector, `imbl::Vector`, `imbl::OrdMap`) on snapshot clone, single-glyph replace and memory of 200 undo snapshots, up to 65,535 glyphs |
 | `spike-3-ipc.md` | Spike 3 report for ADR-0002 and ADR-0013: IPC round trip (JSON vs binary), patch stream, WASM hit test and synthetic drag on a 5,000-point glyph; idle and loaded results, why the cached drag ran at 30 fps (GPU facts, drawing probes, traces), the budgets restated, and the runs still needed |

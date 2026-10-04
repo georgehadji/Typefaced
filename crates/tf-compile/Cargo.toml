@@ -1,0 +1,29 @@
+[package]
+name = "tf-compile"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Font compiler adapter: UFO and designspace sources to TTF through fontc, in-process, and TTF to CFF-based OTF"
+
+[package.metadata.typefaced]
+layer = "adapter"
+
+[dependencies]
+# fontc and the fontations crates are pre-1.0 in practice (monthly breaking changes):
+# pin exact versions and upgrade them together (ADR-0006). No `cli` feature: no clap.
+fontc = { version = "=1.0.0", default-features = false, features = ["rayon"] }
+# The versions in fontc 1.0.0's tree. write-fonts re-exports read-fonts as `read`.
+kurbo = "=0.13.1"
+norad = { version = "=0.18.4", default-features = false, features = ["kurbo"] }
+tf-cff = { path = "../tf-cff" }
+thiserror = { workspace = true }
+write-fonts = "=0.52.0"
+
+[dev-dependencies]
+# skrifa re-exports read-fonts as `skrifa::raw`; the versions match fontc 1.0.0's tree.
+skrifa = "=0.46.2"
+
+[lints]
+workspace = true

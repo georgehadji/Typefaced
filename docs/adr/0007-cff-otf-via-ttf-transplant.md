@@ -1,5 +1,5 @@
 # ADR-0007: CFF-based OTF via TTF → CFF transplant with `tf-cff`
-Status: Proposed · Date: 2026-09-29
+Status: Accepted · Date: 2026-10-03
 
 Source: [implementation plan](../implementation-plan.md) §1 (D4), §3.4, §5.8, §5.10, §5.13, §10.4, §14, §15 (R2); [research](../research.md) §6.1; [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) Step 7.
 
@@ -22,8 +22,8 @@ Source: [implementation plan](../implementation-plan.md) §1 (D4), §3.4, §5.8,
 - **`tf-cff` is a pure serialiser** for CFF version 1: domain layer, data in, bytes out, no file access (§5.8).
   - A builder API, a Type 2 charstring encoder, typed INDEX and DICT structures before bytes, and optimisation levels as a Strategy.
   - In 1.0: empty subroutine INDEXes and no hints.
-- **It sits behind the `CffWriter` port** (§5.10), with an allsorts-based adapter as the alternative.
-- **Build or reuse is decided by the spike.** Step 7 first checks whether `write-fonts` or `allsorts` can serialise CFF for new fonts; reuse wins if it meets the pass criteria with less code. Writing it from scratch is estimated at 1.5–2.5k lines of Rust (§5.8).
+- **It sits behind the `CffWriter` port** (§5.10). There is no allsorts-based alternative: allsorts cannot build a CFF table for a new font (Spike 2).
+- **Build, not reuse** (decided by Spike 2). Neither `write-fonts` 0.52.0 (no CFF 1 writer compiled in) nor `allsorts` 0.17.0 (no public way to create INDEX or DICT entries, no outline-to-charstring encoder) can serialise CFF for new fonts. The writer took about 650 lines of Rust (estimate: 1.5–2.5k, §5.8).
 - **Variable fonts ship as TTF.** CFF2 is not planned (§5.8).
 
 ## Consequences
@@ -52,4 +52,11 @@ Pass criteria (Step 7 exit criteria):
   - Windows Font Viewer renders it.
 - The build-versus-reuse decision is made, with evidence.
 
-Step 7 sets this ADR to Accepted or Rejected, recording the build-versus-reuse decision and the known gaps (no subroutinisation, no hints). If it is rejected, the fallback is a fontTools/fontmake CFF path as a sidecar. That brings Python back at runtime, so it needs the user's approval as an amendment to this ADR.
+Validated by Step 7 — Spike 2 ([report](../spikes/spike-2-cff.md)), with `tf-cff` and `tf_compile::ttf_to_otf` on fontc 1.0.0's TTF:
+- **Outlines:** 0 point differences against the rounded, decomposed source for the fixture (6 glyphs, `Aacute` = `A` + `acute` at the component offset) and all 6 Inria Sans styles (591 glyphs each, 312 composites).
+- **Validators:** OTS and `ttx` (the `CFF ` table and a full dump) pass for all 7 fonts; fontTools recomputes the same `FontBBox`, `head` box, left side bearings and `hhea` extents.
+- **Windows Font Viewer** renders all 6 Inria Sans OTFs from the file, without installing them (screenshot in the report).
+- **Build vs reuse:** build (see *Decision*).
+- **Speed:** `compile_to_otf` takes about 0.78 s for 591 glyphs on a release build without fat LTO (about 1.3 s per 1,000 glyphs; budget 3 s, §10.4).
+
+Known gaps: no subroutinisation, no hints, one charstring operator per segment (OTFs about 40% larger than the TTFs), no Top DICT FontInfo keys, no `vmtx`, `.ufo` sources only. The report lists them as follow-ups.

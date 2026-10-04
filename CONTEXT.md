@@ -34,6 +34,8 @@ and version over typed IPC. The status of each step is in the table at the top o
 | Full architecture and roadmap | `docs/implementation-plan.md` |
 | Current work and what is left | `plans/` (status table) |
 | IPC command types | `crates/tf-commands/src/lib.rs` → `packages/bindings/src/index.ts` |
+| Compiling a UFO or designspace to TTF, or a UFO to OTF | `crates/tf-compile/src/lib.rs` |
+| Writing a `CFF ` table from cubic outlines | `crates/tf-cff/src/lib.rs` |
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
 | Geometry kernel (hit testing, point edits) | `crates/tf-geometry/src/lib.rs` → `crates/tf-wasm/src/lib.rs` → `packages/geometry-wasm` |
 | UI code | `apps/desktop/src/` |
@@ -57,8 +59,16 @@ and version over typed IPC. The status of each step is in the table at the top o
 | `apps/desktop/src-tauri/icons/` | [CONTEXT.md](apps/desktop/src-tauri/icons/CONTEXT.md) | App icons for the bundle |
 | `apps/desktop/src-tauri/src/` | [CONTEXT.md](apps/desktop/src-tauri/src/CONTEXT.md) | Tauri entry point and IPC registration |
 | `crates/` | [CONTEXT.md](crates/CONTEXT.md) | Rust library crates of the engine |
+| `crates/tf-cff/` | [CONTEXT.md](crates/tf-cff/CONTEXT.md) | CFF writer crate (domain layer): cubic outlines to a `CFF ` table |
+| `crates/tf-cff/src/` | [CONTEXT.md](crates/tf-cff/src/CONTEXT.md) | Builder, charstring encoder, byte encodings |
+| `crates/tf-cff/tests/` | [CONTEXT.md](crates/tf-cff/tests/CONTEXT.md) | Tables built and read back with read-fonts and skrifa |
 | `crates/tf-commands/` | [CONTEXT.md](crates/tf-commands/CONTEXT.md) | Typed command catalog crate (application layer) |
 | `crates/tf-commands/src/` | [CONTEXT.md](crates/tf-commands/src/CONTEXT.md) | Command and payload types |
+| `crates/tf-compile/` | [CONTEXT.md](crates/tf-compile/CONTEXT.md) | Font compiler crate (adapter layer): UFO and designspace to TTF through fontc; TTF to OTF |
+| `crates/tf-compile/src/` | [CONTEXT.md](crates/tf-compile/src/CONTEXT.md) | Compile functions, OTF transplant, source outline reader, error type |
+| `crates/tf-compile/examples/` | [CONTEXT.md](crates/tf-compile/examples/CONTEXT.md) | Timing programs for Spikes 1 and 2 |
+| `crates/tf-compile/tests/` | [CONTEXT.md](crates/tf-compile/tests/CONTEXT.md) | Fixture, corpus, designspace 5 and OTF tests |
+| `crates/tf-compile/tests/data/` | [CONTEXT.md](crates/tf-compile/tests/data/CONTEXT.md) | Input files for the tests |
 | `crates/tf-geometry/` | [CONTEXT.md](crates/tf-geometry/CONTEXT.md) | Geometry kernel crate on packed outlines (domain layer) |
 | `crates/tf-geometry/benches/` | [CONTEXT.md](crates/tf-geometry/benches/CONTEXT.md) | Headless timing of the hit test |
 | `crates/tf-geometry/src/` | [CONTEXT.md](crates/tf-geometry/src/CONTEXT.md) | Hit testing and point edits |
@@ -73,6 +83,9 @@ and version over typed IPC. The status of each step is in the table at the top o
 | `packages/geometry-wasm/` | [CONTEXT.md](packages/geometry-wasm/CONTEXT.md) | Geometry kernel compiled to WebAssembly (`pkg/` is generated) |
 | `plans/` | [CONTEXT.md](plans/CONTEXT.md) | Milestone construction plans |
 | `spikes/` | [CONTEXT.md](spikes/CONTEXT.md) | Throw-away experiments, each its own Cargo workspace |
+| `spikes/spike-boolean/` | [CONTEXT.md](spikes/spike-boolean/CONTEXT.md) | Spike 5: boolean engine for overlap removal |
+| `spikes/spike-boolean/src/` | [CONTEXT.md](spikes/spike-boolean/src/CONTEXT.md) | Engines, case set, measurements, report runner |
+| `spikes/spike-boolean/benches/` | [CONTEXT.md](spikes/spike-boolean/benches/CONTEXT.md) | Timing benchmark |
 | `spikes/spike-collections/` | [CONTEXT.md](spikes/spike-collections/CONTEXT.md) | Spike 6: persistent collections |
 | `spikes/spike-collections/src/` | [CONTEXT.md](spikes/spike-collections/src/CONTEXT.md) | Candidate glyph tables |
 | `spikes/spike-collections/benches/` | [CONTEXT.md](spikes/spike-collections/benches/CONTEXT.md) | Timing and memory benchmarks |
@@ -178,8 +191,30 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
 ├── crates/
+│   ├── tf-cff/
+│   │   ├── src/
+│   │   │   ├── encode.rs
+│   │   │   ├── lib.rs
+│   │   │   └── outline.rs
+│   │   ├── tests/read_back.rs
+│   │   └── Cargo.toml
 │   ├── tf-commands/
 │   │   ├── src/lib.rs
+│   │   └── Cargo.toml
+│   ├── tf-compile/
+│   │   ├── examples/
+│   │   │   ├── baseline.rs
+│   │   │   └── compile.rs
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── otf.rs
+│   │   │   └── source.rs
+│   │   ├── tests/
+│   │   │   ├── data/discrete-axis.designspace
+│   │   │   ├── compile_fixture.rs
+│   │   │   ├── corpus.rs
+│   │   │   ├── designspace_v5.rs
+│   │   │   └── otf.rs
 │   │   └── Cargo.toml
 │   ├── tf-geometry/
 │   │   ├── benches/hit_test.rs
@@ -212,7 +247,11 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── README.md
 │   │   └── template.md
 │   ├── spikes/
+│   │   ├── spike-1-fontc.md
+│   │   ├── spike-2-cff.md
+│   │   ├── spike-2-fontview-inria-sans.png
 │   │   ├── spike-3-ipc.md
+│   │   ├── spike-5-boolean.md
 │   │   └── spike-6-collections.md
 │   ├── implementation-plan.md
 │   └── research.md
@@ -225,13 +264,24 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │       ├── .gitignore
 │       └── package.json
 ├── plans/typefaced-m0-foundations-and-spikes.md
-├── spikes/spike-collections/
-│   ├── benches/
-│   │   ├── memory.rs
-│   │   └── ops.rs
-│   ├── src/lib.rs
-│   ├── Cargo.lock
-│   └── Cargo.toml
+├── spikes/
+│   ├── spike-boolean/
+│   │   ├── benches/engines.rs
+│   │   ├── src/
+│   │   │   ├── cases.rs
+│   │   │   ├── engines.rs
+│   │   │   ├── lib.rs
+│   │   │   ├── main.rs
+│   │   │   └── measure.rs
+│   │   ├── Cargo.lock
+│   │   └── Cargo.toml
+│   └── spike-collections/
+│       ├── benches/
+│       │   ├── memory.rs
+│       │   └── ops.rs
+│       ├── src/lib.rs
+│       ├── Cargo.lock
+│       └── Cargo.toml
 ├── tests/
 │   ├── corpus/
 │   │   ├── .gitignore

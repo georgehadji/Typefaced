@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Outer: legs, crossbar and curved sides meeting at the apex; counter-clockwise. -->
+<!-- Counter above the crossbar; clockwise. -->
 <glyph name="A" format="2">
   <advance width="600"/>
   <unicode hex="0041"/>
   <outline>
-    <!-- Outer: legs, crossbar and curved sides meeting at the apex; counter-clockwise. -->
     <contour>
       <point x="20" y="0" type="curve"/>
       <point x="140" y="0" type="line"/>
@@ -17,7 +18,6 @@
       <point x="240" y="700"/>
       <point x="120" y="330"/>
     </contour>
-    <!-- Counter above the crossbar; clockwise. -->
     <contour>
       <point x="220" y="260" type="line"/>
       <point x="300" y="560" type="line"/>

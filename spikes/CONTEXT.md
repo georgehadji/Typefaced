@@ -7,4 +7,5 @@ a spike with `--manifest-path spikes/<name>/Cargo.toml`. Results are written up 
 
 | Subfolder | Context |
 |---|---|
+| `spike-boolean/` | [CONTEXT.md](spike-boolean/CONTEXT.md): Spike 5, boolean engine for overlap removal (ADR-0008) |
 | `spike-collections/` | [CONTEXT.md](spike-collections/CONTEXT.md): Spike 6, persistent collections (ADR-0017) |

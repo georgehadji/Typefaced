@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Outer box, counter-clockwise. -->
+<!-- Inner box, clockwise. -->
 <glyph name=".notdef" format="2">
   <advance width="500"/>
   <outline>
-    <!-- Outer box, counter-clockwise. -->
     <contour>
       <point x="50" y="0" type="line"/>
       <point x="450" y="0" type="line"/>
       <point x="450" y="700" type="line"/>
       <point x="50" y="700" type="line"/>
     </contour>
-    <!-- Inner box, clockwise. -->
     <contour>
       <point x="100" y="50" type="line"/>
       <point x="100" y="650" type="line"/>
