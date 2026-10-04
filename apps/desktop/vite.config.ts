@@ -8,6 +8,10 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   plugins: [react()],
 
+  // The WASM kernel is imported with `?inline` (a data URL), which needs .wasm to be an
+  // asset: see src/bench/kernel.ts.
+  assetsInclude: ["**/*.wasm"],
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
@@ -38,8 +42,15 @@ export default defineConfig({
       provider: "v8",
       // Only this app's code: the generated bindings are another package.
       include: ["src/**/*.{ts,tsx}"],
-      // The entry point only mounts <App /> into the page.
-      exclude: ["src/main.tsx", "src/**/*.test.{ts,tsx}", "src/**/*.d.ts"],
+      // The entry point only mounts the page. The dev-only benchmark runners need the
+      // real WebView (Tauri IPC, WASM, Canvas2D, requestAnimationFrame), which jsdom
+      // lacks; they are validated by running `#/bench` (docs/spikes/spike-3-ipc.md).
+      exclude: [
+        "src/main.tsx",
+        "src/bench/runners.ts",
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.d.ts",
+      ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },
   },

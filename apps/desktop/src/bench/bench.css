@@ -1,0 +1,9 @@
+.bench {
+  padding: 16px;
+}
+
+.bench canvas {
+  width: 760px;
+  height: 760px;
+  background: #fff;
+}

@@ -41,7 +41,7 @@ After that, M1 (headless engine) can start.
 | 5 | Test fixtures and pinned corpus | 3.1 | default | 0.5 d | DONE (#6) |
 | 6 | Spike 1 — fontc as an in-process library (ADR-006) | 4, 5 | default | 2 d | DONE (#9) |
 | 7 | Spike 2 — CFF writer and OTF transplant (ADR-007) | 6 | strongest | 3 d | DONE (#11) |
-| 8 | Spike 3 — IPC latency and WASM kernel (ADR-002, ADR-013) | 3.2, 4 | default | 2 d | TODO |
+| 8 | Spike 3 — IPC latency and WASM kernel (ADR-002, ADR-013) | 3.2, 4 | default | 2 d | DONE (#12) |
 | 9.1 | Spike 4a — AI egress host (Rust) | 8 | strongest | 1 d | TODO |
 | 9.2 | Spike 4b — AI client and tool runner (TypeScript) (ADR-009) | 9.1 | strongest | 1 d | TODO |
 | 10 | Spike 5 — boolean engine (ADR-008) | 4, 5 | default | 1.5 d | DONE (#10) |

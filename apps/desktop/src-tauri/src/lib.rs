@@ -3,6 +3,9 @@
 //! Every IPC command is registered in [`specta_builder`], the single source of truth
 //! for both the running app and the generated TypeScript bindings.
 
+#[cfg(feature = "bench")]
+mod bench;
+
 use tauri_specta::{Builder, collect_commands};
 use tf_commands::AppInfo;
 
@@ -29,9 +32,27 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
     reason = "the app cannot run without its window runtime; failing loudly at start-up is intended"
 )]
 pub fn run() {
-    let builder = specta_builder();
-    tauri::Builder::default()
-        .invoke_handler(builder.invoke_handler())
+    let typed = specta_builder().invoke_handler();
+    let app = tauri::Builder::default();
+
+    // Dev-only benchmarks: their raw commands are routed by name, outside tauri-specta.
+    #[cfg(feature = "bench")]
+    let (app, typed) = {
+        let bench = bench::invoke_handler();
+        let handler = move |invoke: tauri::ipc::Invoke| {
+            if invoke.message.command().starts_with(bench::COMMAND_PREFIX) {
+                bench(invoke)
+            } else {
+                typed(invoke)
+            }
+        };
+        let app = app
+            .manage(bench::BenchState::default())
+            .setup(|app| bench::open_bench_page(app));
+        (app, handler)
+    };
+
+    app.invoke_handler(typed)
         .run(tauri::generate_context!())
         .expect("error while running the Typefaced application");
 }
