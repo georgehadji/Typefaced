@@ -137,11 +137,13 @@ async fn write_reply(stream: &mut TcpStream, reply: Reply) -> std::io::Result<()
     for part in reply.parts {
         match part {
             Part::Bytes(bytes) => {
-                stream
-                    .write_all(format!("{:x}\r\n", bytes.len()).as_bytes())
-                    .await?;
-                stream.write_all(bytes).await?;
-                stream.write_all(b"\r\n").await?;
+                // An empty chunk would end the body early.
+                assert!(!bytes.is_empty(), "body parts must not be empty");
+                // One write per chunk, so a part reaches the client in one read.
+                let mut chunk = format!("{:x}\r\n", bytes.len()).into_bytes();
+                chunk.extend_from_slice(bytes);
+                chunk.extend_from_slice(b"\r\n");
+                stream.write_all(&chunk).await?;
                 stream.flush().await?;
             }
             Part::Wait(signal) => {

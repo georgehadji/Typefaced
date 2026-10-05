@@ -43,7 +43,7 @@ pub struct ProxyRequest {
 
 /// A request that passed the policy: ready to send once the key is added.
 #[derive(Debug)]
-pub struct PreparedRequest {
+pub(crate) struct PreparedRequest {
     pub method: Method,
     pub url: Url,
     pub headers: HeaderMap,
@@ -61,7 +61,7 @@ pub enum PolicyError {
     Destination,
     #[error("a forwarded header has an invalid name or value")]
     BadHeader,
-    #[error("the request body is larger than 32 MiB")]
+    #[error("the request body is larger than {} MiB", MAX_BODY_BYTES >> 20)]
     BodyTooLarge,
     #[error("a GET request cannot have a body")]
     BodyOnGet,
@@ -92,8 +92,9 @@ impl EgressPolicy {
         }
     }
 
-    /// Checks `request` and rebuilds it with only the allowed parts.
-    pub fn prepare(&self, request: &ProxyRequest) -> Result<PreparedRequest, PolicyError> {
+    /// Checks `request` and rebuilds it with only the allowed parts. Takes the request
+    /// by value so a large body is moved, never copied.
+    pub(crate) fn prepare(&self, request: ProxyRequest) -> Result<PreparedRequest, PolicyError> {
         let method = allowed_method(&request.method)?;
         let url = self.allowed_url(&request.url)?;
         if request
@@ -110,7 +111,7 @@ impl EgressPolicy {
             method,
             url,
             headers: passed_headers(&request.headers)?,
-            body: request.body.clone(),
+            body: request.body,
         })
     }
 
@@ -184,7 +185,7 @@ mod tests {
     fn allows_post_and_get_to_the_claude_api() {
         let policy = EgressPolicy::anthropic();
         let prepared = policy
-            .prepare(&post("https://api.anthropic.com/v1/messages?beta=true"))
+            .prepare(post("https://api.anthropic.com/v1/messages?beta=true"))
             .unwrap();
         assert_eq!(prepared.method, Method::POST);
         assert_eq!(
@@ -194,7 +195,7 @@ mod tests {
         assert_eq!(prepared.body.as_deref(), Some("{}"));
 
         let get = policy
-            .prepare(&request("get", "https://API.anthropic.com:443/v1/models"))
+            .prepare(request("get", "https://API.anthropic.com:443/v1/models"))
             .unwrap();
         assert_eq!(get.method, Method::GET);
         assert_eq!(get.url.as_str(), "https://api.anthropic.com/v1/models");
@@ -219,7 +220,7 @@ mod tests {
             "https://api.anthropic.com/v1/..\\admin",
         ] {
             assert_eq!(
-                policy.prepare(&post(url)).unwrap_err(),
+                policy.prepare(post(url)).unwrap_err(),
                 PolicyError::Destination,
                 "{url}"
             );
@@ -231,7 +232,7 @@ mod tests {
         let policy = EgressPolicy::anthropic();
         for url in ["/v1/messages", "", "https://", "not a url"] {
             assert_eq!(
-                policy.prepare(&post(url)).unwrap_err(),
+                policy.prepare(post(url)).unwrap_err(),
                 PolicyError::BadUrl,
                 "{url}"
             );
@@ -242,7 +243,7 @@ mod tests {
     fn rejects_methods_other_than_get_and_post() {
         let policy = EgressPolicy::anthropic();
         for method in ["PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", ""] {
-            let found = policy.prepare(&request(method, "https://api.anthropic.com/v1/messages"));
+            let found = policy.prepare(request(method, "https://api.anthropic.com/v1/messages"));
             assert_eq!(found.unwrap_err(), PolicyError::Method, "{method}");
         }
     }
@@ -267,7 +268,7 @@ mod tests {
         .map(|(n, v)| (n.to_owned(), v.to_owned()))
         .collect();
 
-        let headers = EgressPolicy::anthropic().prepare(&req).unwrap().headers;
+        let headers = EgressPolicy::anthropic().prepare(req).unwrap().headers;
 
         assert_eq!(headers.len(), 5);
         assert_eq!(headers["anthropic-version"], "2023-06-01");
@@ -296,7 +297,7 @@ mod tests {
             "1\r\nx-api-key: injected".into(),
         )];
         assert_eq!(
-            EgressPolicy::anthropic().prepare(&req).unwrap_err(),
+            EgressPolicy::anthropic().prepare(req).unwrap_err(),
             PolicyError::BadHeader
         );
     }
@@ -306,9 +307,9 @@ mod tests {
         let policy = EgressPolicy::anthropic();
         let mut req = post("https://api.anthropic.com/v1/messages");
         req.body = Some("x".repeat(MAX_BODY_BYTES));
-        assert!(policy.prepare(&req).is_ok());
+        assert!(policy.prepare(req.clone()).is_ok());
         req.body = Some("x".repeat(MAX_BODY_BYTES + 1));
-        assert_eq!(policy.prepare(&req).unwrap_err(), PolicyError::BodyTooLarge);
+        assert_eq!(policy.prepare(req).unwrap_err(), PolicyError::BodyTooLarge);
     }
 
     #[test]
@@ -316,7 +317,7 @@ mod tests {
         let mut req = request("GET", "https://api.anthropic.com/v1/models");
         req.body = Some(String::new());
         assert_eq!(
-            EgressPolicy::anthropic().prepare(&req).unwrap_err(),
+            EgressPolicy::anthropic().prepare(req).unwrap_err(),
             PolicyError::BodyOnGet
         );
     }
@@ -324,7 +325,7 @@ mod tests {
     #[test]
     fn drops_the_fragment() {
         let url = EgressPolicy::anthropic()
-            .prepare(&post("https://api.anthropic.com/v1/messages#frag"))
+            .prepare(post("https://api.anthropic.com/v1/messages#frag"))
             .unwrap()
             .url;
         assert_eq!(url.as_str(), "https://api.anthropic.com/v1/messages");
@@ -335,18 +336,18 @@ mod tests {
         let policy = EgressPolicy::for_test_origin("http://127.0.0.1:4100");
         assert!(
             policy
-                .prepare(&post("http://127.0.0.1:4100/v1/messages"))
+                .prepare(post("http://127.0.0.1:4100/v1/messages"))
                 .is_ok()
         );
         assert_eq!(
             policy
-                .prepare(&post("http://127.0.0.1:4101/v1/messages"))
+                .prepare(post("http://127.0.0.1:4101/v1/messages"))
                 .unwrap_err(),
             PolicyError::Destination
         );
         assert_eq!(
             policy
-                .prepare(&post("https://api.anthropic.com/v1/messages"))
+                .prepare(post("https://api.anthropic.com/v1/messages"))
                 .unwrap_err(),
             PolicyError::Destination
         );
@@ -357,7 +358,7 @@ mod tests {
         let policy = EgressPolicy::for_test_origin("not an origin");
         assert_eq!(
             policy
-                .prepare(&post("https://api.anthropic.com/v1/messages"))
+                .prepare(post("https://api.anthropic.com/v1/messages"))
                 .unwrap_err(),
             PolicyError::Destination
         );

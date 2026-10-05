@@ -15,7 +15,7 @@ const MAX_KEY_BYTES: usize = 512;
 /// Why a vault operation failed. No variant carries the key or keychain secret data.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum VaultError {
-    #[error("the API key must be 1 to 512 visible ASCII characters without spaces")]
+    #[error("the API key must be 1 to {MAX_KEY_BYTES} visible ASCII characters without spaces")]
     InvalidKey,
     #[error("no API key is stored")]
     NoKey,

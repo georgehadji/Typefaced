@@ -15,7 +15,8 @@ export const commands = {
 	/**
 	 *  Forwards one request to the Claude API with the stored key. `on_event` receives the
 	 *  response head first, then the body chunks, then an end, error or aborted marker. The
-	 *  command itself resolves when the response is over.
+	 *  command itself resolves when the response is over. Failures travel on the channel; the
+	 *  `Result` is there because Tauri requires it for async commands that borrow `State`.
 	 */
 	aiFetch: (request: ProxyRequest, onEvent: Channel<ProxyEvent>) => typedError<null, string>(__TAURI_INVOKE("ai_fetch", { request, onEvent })),
 	/**  Cancels the in-flight request `request_id`. Returns whether there was one. */

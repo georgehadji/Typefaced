@@ -44,7 +44,8 @@ pub fn ai_delete_key(host: State<'_, EgressHost>) -> Result<(), String> {
 
 /// Forwards one request to the Claude API with the stored key. `on_event` receives the
 /// response head first, then the body chunks, then an end, error or aborted marker. The
-/// command itself resolves when the response is over.
+/// command itself resolves when the response is over. Failures travel on the channel; the
+/// `Result` is there because Tauri requires it for async commands that borrow `State`.
 #[tauri::command]
 #[specta::specta]
 pub async fn ai_fetch(
