@@ -3,5 +3,20 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "allow-app-info",
+    "allow-ai-set-key",
+    "allow-ai-has-key",
+    "allow-ai-delete-key",
+    "allow-ai-fetch",
+    "allow-ai-abort",
+    "allow-bench-commit-json",
+    "allow-bench-commit-binary",
+    "allow-bench-patch-stream",
+    "allow-bench-ping",
+    "allow-bench-ping-async",
+    "allow-bench-log",
+    "allow-bench-report"
+  ]
 }

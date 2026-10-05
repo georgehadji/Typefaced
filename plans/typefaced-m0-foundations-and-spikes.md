@@ -42,7 +42,7 @@ After that, M1 (headless engine) can start.
 | 6 | Spike 1 — fontc as an in-process library (ADR-006) | 4, 5 | default | 2 d | DONE (#9) |
 | 7 | Spike 2 — CFF writer and OTF transplant (ADR-007) | 6 | strongest | 3 d | DONE (#11) |
 | 8 | Spike 3 — IPC latency and WASM kernel (ADR-002, ADR-013) | 3.2, 4 | default | 2 d | DONE (#12) |
-| 9.1 | Spike 4a — AI egress host (Rust) | 8 | strongest | 1 d | TODO |
+| 9.1 | Spike 4a — AI egress host (Rust) | 8 | strongest | 1 d | DONE (#13) |
 | 9.2 | Spike 4b — AI client and tool runner (TypeScript) (ADR-009) | 9.1 | strongest | 1 d | TODO |
 | 10 | Spike 5 — boolean engine (ADR-008) | 4, 5 | default | 1.5 d | DONE (#10) |
 | 11 | Spike 6 — persistent collections (ADR-017) | 4 | default | 1 d | DONE (#3) |
@@ -1165,8 +1165,11 @@ cargo deny check
    - Run `pnpm --filter @typefaced/desktop tauri build --debug --no-bundle` and start the binary.
    - In its devtools console, `fetch('https://api.anthropic.com/v1/models')` must be blocked.
    - The CSP is defence in depth. The real key control is the Rust proxy.
-6. Run the `ecc:security-reviewer` agent on the diff, and fix every CRITICAL and HIGH finding.
-7. Write `docs/spikes/spike-4-ai-egress.md`, covering Steps 9.1 and 9.2. Set ADR-009 to Accepted or Rejected.
+6. **`anthropic-beta` and body-field allowlists in `tf-ai-host`.** Step 9.1 passes any `anthropic-beta` value through and checks only some body fields (`mcp_servers`, tool types, content sources). Allow only the beta values the client actually sends (e.g. the one `fallbacks: "default"` needs) and only the top-level body fields it sends (e.g. `model`, `messages`, `max_tokens`, `system`, `tools`, `tool_choice`, `thinking`, `stream`, `metadata`, `stop_sequences`, `temperature`, `fallbacks`, `output_config`); refuse anything else. Tests first. Note: Step 9.1's body check refuses any key named `source` whose value is not a string or an inline content source, so a tool schema property or tool input named `source` is refused (fails closed); avoid that name in tool schemas or skip those subtrees in the check, with a test.
+7. Run the `ecc:security-reviewer` agent on the diff, and fix every CRITICAL and HIGH finding.
+8. Write `docs/spikes/spike-4-ai-egress.md`, covering Steps 9.1 and 9.2. Set ADR-009 to Accepted or Rejected, and record two accepted risks in it:
+   - script in the webview can replace or delete the stored key through `ai_set_key` / `ai_delete_key` without confirmation; the M3 native credential prompt closes this;
+   - the system proxy is honoured, so a TLS-inspecting proxy that the OS trusts could see the key; kept so that corporate networks work.
 
 **Verification.**
 ```bash
@@ -1362,3 +1365,6 @@ grep -l '^Status: Proposed' docs/adr/0*.md        # only ADRs of spikes marked S
 | 2026-09-29 | Revised after adversarial review: split Step 3 into 3.1/3.2 and Step 9 into 9.1/9.2; spikes moved to standalone workspaces; per-layer coverage (§12.2); CSP checks moved to debug builds; keyring 4.x guidance; test credentials isolated from the user's real key; CFF decomposition and name/SID rules; fixture code points and contour directions; content digests for the corpus; bash shell on Windows CI; Font Viewer instead of WordPad; no global rustup changes | Review verdict PASS WITH FIXES (0 critical, 5 high) | — |
 | 2026-09-29 | Step 1 gates answered: the repository stays public; LICENSE holder is Georgios-Chrysovalantis Chatzivantsidis; `main` gets a ruleset that requires pull requests | User decisions | User |
 | 2026-09-30 | App identifier changed from `com.typefaced.app` to `com.typefaced.desktop` (Step 2 text, keychain service names in Step 9.1) | Tauri warns that identifiers ending in `.app` clash with the macOS bundle extension | User |
+| 2026-10-05 | Step 9.1 as built: reqwest 0.13 with `native-tls` enabled explicitly (its default is rustls + aws-lc-rs); the keychain store is passed to `CredentialVault` instead of `set_default_store`; a hand-written mock HTTP server instead of wiremock (it must pause mid-body); response chunks are UTF-8 text; every app command, not only `ai_*`, is restricted to the main window by an app ACL manifest | Facts found while building the step; the exit criteria are unchanged | — |
+| 2026-10-05 | Step 9.1 egress policy narrowed: only POST `/v1/messages` and `/v1/messages/count_tokens` and GET `/v1/models[/{id}]` (exact match) instead of the `/v1/` prefix; POST bodies with `mcp_servers` or server-tool `type`s are refused. `anthropic-beta` still passes through unchanged; Step 9.2 gains a task for the beta allowlist and records two accepted risks in ADR-0009 (key replace/delete from the webview; system proxy honoured) | Security review of PR #13: server-side tools could carry data out through Anthropic | User |
+| 2026-10-05 | Step 9.1 body check extended after the review of that change: content `source`s other than inline `base64`/`text`/`content` (e.g. image or document `url` sources, which the API fetches) and duplicate keys at any depth are refused; a POST is always sent as `application/json`; only known query parameters pass. Step 9.2's allowlist task also covers top-level body fields | Security review: URL content sources were a second way to make Anthropic fetch an attacker URL (HIGH) | — |
