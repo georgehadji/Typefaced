@@ -21,8 +21,8 @@ and WOFF2.
   `driver`, `tool`) in `[package.metadata.typefaced]`. Dependencies point inward only;
   `cargo xtask check-deps` enforces this.
 
-**Stage:** milestone M0 (foundations and technical spikes). The app only shows its name
-and version over typed IPC. The status of each step is in the table at the top of
+**Stage:** milestone M0 (foundations and technical spikes). The app shows its name and
+version over typed IPC, and its shell exposes the AI egress commands (no AI UI yet). The status of each step is in the table at the top of
 `plans/typefaced-m0-foundations-and-spikes.md`.
 
 ## Where to look for…

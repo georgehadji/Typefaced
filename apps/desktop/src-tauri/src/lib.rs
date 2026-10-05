@@ -45,7 +45,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
 pub fn run() {
     let typed = specta_builder().invoke_handler();
     let app = tauri::Builder::default().setup(|app| {
-        app.manage(ai::host(app.handle())?);
+        // AI is optional: without a host (e.g. no OS keychain) the app still starts and
+        // the `ai_*` commands answer with an error.
+        match ai::host(app.handle()) {
+            Ok(host) => {
+                app.manage(host);
+            }
+            Err(error) => eprintln!("AI is unavailable: {error}"),
+        }
         #[cfg(feature = "bench")]
         bench::open_bench_page(app)?;
         Ok(())
@@ -125,6 +132,7 @@ mod tests {
 
     /// The real capabilities (`generate_context!`) grant the app commands to the `main`
     /// window only; any other window is refused before a command runs.
+    #[cfg(windows)]
     #[test]
     fn only_the_main_window_may_call_the_app_commands() {
         // A test-only keychain entry that this test never writes.
