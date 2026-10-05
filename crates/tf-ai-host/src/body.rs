@@ -57,6 +57,8 @@ pub(crate) fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
 /// a short string, whether it is an object, and an object's `type` if that is a string.
 #[derive(Default)]
 struct Walk {
+    /// The value is a string, of any length.
+    text: bool,
     string: Option<String>,
     object: bool,
     kind: Option<String>,
@@ -83,10 +85,11 @@ impl<'de> Visitor<'de> for WalkVisitor {
         // Keys arrive with JSON escapes decoded.
         while let Some(key) = map.next_key::<String>()? {
             let value: Walk = map.next_value()?;
-            if key == "source"
-                && value.object
-                && !INLINE_SOURCES.contains(&value.kind.as_deref().unwrap_or_default())
-            {
+            // A string `source` (a citation's) is never fetched; an object one must be
+            // inline; any other `source` (array, number, null) is refused too.
+            let inline =
+                value.object && INLINE_SOURCES.contains(&value.kind.as_deref().unwrap_or_default());
+            if key == "source" && !value.text && !inline {
                 return Err(A::Error::custom(FETCHED_SOURCE));
             }
             if key == "type" {
@@ -97,9 +100,9 @@ impl<'de> Visitor<'de> for WalkVisitor {
             }
         }
         Ok(Walk {
-            string: None,
             object: true,
             kind,
+            ..Walk::default()
         })
     }
 
@@ -111,6 +114,7 @@ impl<'de> Visitor<'de> for WalkVisitor {
     fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Walk, E> {
         // Only short strings can be a `type`; long ones (base64 data) are not copied.
         Ok(Walk {
+            text: true,
             string: (v.len() <= MAX_TYPE_BYTES).then(|| v.to_owned()),
             ..Walk::default()
         })

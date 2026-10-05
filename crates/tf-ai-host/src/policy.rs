@@ -68,7 +68,7 @@ pub enum PolicyError {
     BodyTooLarge,
     #[error("a GET request cannot have a body")]
     BodyOnGet,
-    #[error("the request body must be one JSON object without duplicate `tools` or `mcp_servers`")]
+    #[error("the request body must be one JSON object without duplicate keys")]
     BadBody,
     #[error("server-side tools and MCP servers are not allowed; only client tools are")]
     ServerTools,
@@ -434,6 +434,11 @@ mod tests {
                 "{body}"
             );
         }
+        let deep = format!("{{\"a\":{}1{}}}", "[".repeat(200), "]".repeat(200));
+        assert_eq!(
+            policy.prepare(post_body(&deep)).unwrap_err(),
+            PolicyError::BadBody
+        );
         let no_body = request("POST", "https://api.anthropic.com/v1/messages");
         assert_eq!(policy.prepare(no_body).unwrap_err(), PolicyError::BadBody);
     }
@@ -456,6 +461,12 @@ mod tests {
             r#"{"x":{"source":{"type":null}}}"#.to_owned(),
             r#"{"x":{"source":{"url":"https://evil.example/"}}}"#.to_owned(),
             r#"{"x":{"source":{"type":"url"}}}"#.to_owned(),
+            r#"{"x":{"source":{"type":"url"}}}"#.to_owned(),
+            format!(r#"{{"x":{{"source":{{"type":"{}"}}}}}}"#, "b".repeat(65)),
+            r#"{"x":{"source":{"type":"content","content":[{"type":"image","source":{"type":"url","url":"u"}}]}}}"#.to_owned(),
+            r#"{"x":{"source":["url"]}}"#.to_owned(),
+            r#"{"x":{"source":1}}"#.to_owned(),
+            r#"{"x":{"source":null}}"#.to_owned(),
         ] {
             assert_eq!(
                 policy.prepare(post_body(&body)).unwrap_err(),
