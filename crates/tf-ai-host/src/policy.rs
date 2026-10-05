@@ -1,5 +1,6 @@
 //! `EgressPolicy`: decides whether a request from the webview may leave the machine, and
-//! rebuilds it with only the allowed parts (destination, method, headers, body size).
+//! rebuilds it with only the allowed parts: one origin, four endpoints, client tools only,
+//! a size limit and a header allowlist.
 
 use reqwest::Method;
 use reqwest::Url;
@@ -9,9 +10,6 @@ use specta::Type;
 
 /// The only destination in M0: the Claude API.
 pub const ANTHROPIC_ORIGIN: &str = "https://api.anthropic.com";
-
-/// Every forwarded path starts with this prefix.
-const PATH_PREFIX: &str = "/v1/";
 
 /// Upper bound for a request body: 32 MiB.
 pub const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
@@ -57,7 +55,10 @@ pub enum PolicyError {
     Method,
     #[error("the URL is not a valid absolute URL")]
     BadUrl,
-    #[error("the destination is not allowed: only {ANTHROPIC_ORIGIN}{PATH_PREFIX}… is")]
+    #[error(
+        "the destination is not allowed: only POST /v1/messages and /v1/messages/count_tokens \
+         and GET /v1/models[/{{id}}] on {ANTHROPIC_ORIGIN} are"
+    )]
     Destination,
     #[error("a forwarded header has an invalid name or value")]
     BadHeader,
@@ -65,16 +66,20 @@ pub enum PolicyError {
     BodyTooLarge,
     #[error("a GET request cannot have a body")]
     BodyOnGet,
+    #[error("the request body must be one JSON object without duplicate `tools` or `mcp_servers`")]
+    BadBody,
+    #[error("server-side tools and MCP servers are not allowed; only client tools are")]
+    ServerTools,
 }
 
-/// The egress rules: one allowed origin, path prefix `/v1/`, GET and POST only.
+/// The egress rules: one allowed origin and the endpoints in `endpoint_allowed`.
 #[derive(Debug, Clone)]
 pub struct EgressPolicy {
     origin: Option<Url>,
 }
 
 impl EgressPolicy {
-    /// The production policy: only `https://api.anthropic.com/v1/…`.
+    /// The production policy: only the Claude API at `https://api.anthropic.com`.
     pub fn anthropic() -> Self {
         Self::for_origin(ANTHROPIC_ORIGIN)
     }
@@ -107,6 +112,13 @@ impl EgressPolicy {
         if method == Method::GET && request.body.is_some() {
             return Err(PolicyError::BodyOnGet);
         }
+        if !endpoint_allowed(&method, url.path()) {
+            return Err(PolicyError::Destination);
+        }
+        // Only the two POST endpoints take a body; parsed only after the checks above.
+        if method == Method::POST {
+            check_body(request.body.as_deref())?;
+        }
         Ok(PreparedRequest {
             method,
             url,
@@ -126,13 +138,82 @@ impl EgressPolicy {
             && url.host_str() == origin.host_str()
             && url.port_or_known_default() == origin.port_or_known_default();
         let no_credentials = url.username().is_empty() && url.password().is_none();
-        if !same_origin || !no_credentials || !url.path().starts_with(PATH_PREFIX) {
+        if !same_origin || !no_credentials {
             return Err(PolicyError::Destination);
         }
         // A fragment is never sent over HTTP anyway.
         url.set_fragment(None);
         Ok(url)
     }
+}
+
+/// The endpoints the SDK needs, matched exactly on the normalised path (the query is not
+/// part of it): POST `/v1/messages` and `/v1/messages/count_tokens`, GET `/v1/models`
+/// and `/v1/models/{id}`.
+fn endpoint_allowed(method: &Method, path: &str) -> bool {
+    if *method == Method::POST {
+        return matches!(path, "/v1/messages" | "/v1/messages/count_tokens");
+    }
+    if path == "/v1/models" {
+        return true;
+    }
+    path.strip_prefix("/v1/models/").is_some_and(|id| {
+        !id.is_empty()
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    })
+}
+
+/// The top-level fields of a messages body that can turn on server-side work. Field
+/// matching sees JSON escapes decoded, and a duplicate field is an error, so the API
+/// cannot read a different copy than this check did.
+#[derive(Deserialize)]
+struct BodyFields {
+    #[serde(default)]
+    mcp_servers: Present,
+    #[serde(default)]
+    tools: Option<Vec<ToolFields>>,
+}
+
+#[derive(Deserialize)]
+struct ToolFields {
+    /// Absent for client tools; `"custom"` is the explicit client-tool type.
+    #[serde(rename = "type", default)]
+    kind: Present<serde_json::Value>,
+}
+
+/// Whether a field was present (with any value, `null` included), and its value.
+#[derive(Default)]
+struct Present<T = serde::de::IgnoredAny>(Option<T>);
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Present<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        T::deserialize(deserializer).map(|value| Self(Some(value)))
+    }
+}
+
+/// Refuses bodies that ask for server-side tools or MCP servers, and bodies that are not
+/// one JSON object.
+fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
+    let body = body.ok_or(PolicyError::BadBody)?;
+    // serde would also read a JSON array into the struct, by position.
+    if !body.trim_start().starts_with('{') {
+        return Err(PolicyError::BadBody);
+    }
+    let fields: BodyFields = serde_json::from_str(body).map_err(|_| PolicyError::BadBody)?;
+    let server_tool = fields
+        .tools
+        .iter()
+        .flatten()
+        .any(|tool| match &tool.kind.0 {
+            None => false,
+            Some(kind) => kind.as_str() != Some("custom"),
+        });
+    if fields.mcp_servers.0.is_some() || server_tool {
+        return Err(PolicyError::ServerTools);
+    }
+    Ok(())
 }
 
 fn allowed_method(raw: &str) -> Result<Method, PolicyError> {
@@ -228,6 +309,168 @@ mod tests {
     }
 
     #[test]
+    fn allows_only_the_endpoints_the_sdk_needs() {
+        let policy = EgressPolicy::anthropic();
+        let base = "https://api.anthropic.com";
+        for path in [
+            "/v1/messages",
+            "/v1/messages/count_tokens",
+            "/v1/messages?beta=true",
+        ] {
+            assert!(
+                policy.prepare(post(&format!("{base}{path}"))).is_ok(),
+                "{path}"
+            );
+        }
+        for path in [
+            "/v1/models",
+            "/v1/models/claude-opus-5",
+            "/v1/models/claude-3.5_x-1",
+        ] {
+            let found = policy.prepare(request("GET", &format!("{base}{path}")));
+            assert!(found.is_ok(), "{path}");
+        }
+    }
+
+    #[test]
+    fn refuses_every_other_endpoint_and_method_pairing() {
+        let policy = EgressPolicy::anthropic();
+        let base = "https://api.anthropic.com";
+        for path in [
+            "/v1/files",
+            "/v1/files/file_1/content",
+            "/v1/messages/batches",
+            "/v1/messages/batches/b1/results",
+            "/v1/messages/../files",
+            "/v1/messages/%2e%2e/files",
+            "/v1/messages/",
+            "/v1/messages/count_tokens/",
+            "/v1/Messages",
+            "/v1/complete",
+            "/v1/models",
+            "/v1/skills",
+            "/v1/organizations/me",
+        ] {
+            assert_eq!(
+                policy.prepare(post(&format!("{base}{path}"))).unwrap_err(),
+                PolicyError::Destination,
+                "POST {path}"
+            );
+        }
+        for path in [
+            "/v1/messages",
+            "/v1/messages/count_tokens",
+            "/v1/models/",
+            "/v1/models/a/b",
+            "/v1/models/%2e",
+            "/v1/models/a%2Fb",
+            "/v1/files",
+            "/v1/messages/batches",
+        ] {
+            let found = policy.prepare(request("GET", &format!("{base}{path}")));
+            assert_eq!(found.unwrap_err(), PolicyError::Destination, "GET {path}");
+        }
+    }
+
+    fn post_body(body: &str) -> ProxyRequest {
+        ProxyRequest {
+            body: Some(body.into()),
+            ..request("POST", "https://api.anthropic.com/v1/messages")
+        }
+    }
+
+    #[test]
+    fn allows_client_tools_and_custom_tools() {
+        let policy = EgressPolicy::anthropic();
+        for body in [
+            r#"{"model":"m","messages":[]}"#,
+            r#"{"model":"m","tools":[]}"#,
+            r#"  {"tools":[{"name":"get_font_summary","input_schema":{"type":"object"}}]}"#,
+            r#"{"tools":[{"type":"custom","name":"t","input_schema":{}}]}"#,
+            r#"{"messages":[{"role":"user","content":"type mcp_servers web_fetch"}]}"#,
+        ] {
+            assert!(policy.prepare(post_body(body)).is_ok(), "{body}");
+        }
+        let count = ProxyRequest {
+            body: Some(r#"{"tools":[{"name":"t","input_schema":{}}]}"#.into()),
+            ..request("POST", "https://api.anthropic.com/v1/messages/count_tokens")
+        };
+        assert!(policy.prepare(count).is_ok());
+    }
+
+    #[test]
+    fn refuses_server_tools_and_mcp_servers() {
+        let policy = EgressPolicy::anthropic();
+        for body in [
+            r#"{"mcp_servers":[{"type":"url","url":"https://evil.example/mcp"}]}"#,
+            r#"{"mcp_servers":null}"#,
+            r#"{"mcp_servers":[]}"#,
+            r#"{"mcp_servers":[]}"#,
+            r#"{"tools":[{"type":"web_fetch_20250910","name":"web_fetch"}]}"#,
+            r#"{"tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
+            r#"{"tools":[{"type":"code_execution_20250825","name":"code_execution"}]}"#,
+            r#"{"tools":[{"type":"bash_20250124","name":"bash"}]}"#,
+            r#"{"tools":[{"type":"text_editor_20250728","name":"e"}]}"#,
+            r#"{"tools":[{"type":"computer_20250124","name":"c"}]}"#,
+            r#"{"tools":[{"type":"memory_20250818","name":"memory"}]}"#,
+            r#"{"tools":[{"name":"ok","input_schema":{}},{"type":"web_fetch_x"}]}"#,
+            r#"{"tools":[{"type":null,"name":"t"}]}"#,
+            r#"{"tools":[{"type":1,"name":"t"}]}"#,
+            r#"{"tools":[{"type":"Custom","name":"t"}]}"#,
+            r#"{"tools":[{"type":"web_fetch_1"}]}"#,
+            r#"{"tools":[{"type":"web_fetch_1","name":"t","type":"custom"}]}"#,
+        ] {
+            let found = policy.prepare(post_body(body)).unwrap_err();
+            assert!(
+                matches!(found, PolicyError::ServerTools | PolicyError::BadBody),
+                "{body}: {found:?}"
+            );
+        }
+        let count = ProxyRequest {
+            body: Some(r#"{"tools":[{"type":"web_search_20250305"}]}"#.into()),
+            ..request("POST", "https://api.anthropic.com/v1/messages/count_tokens")
+        };
+        assert_eq!(policy.prepare(count).unwrap_err(), PolicyError::ServerTools);
+    }
+
+    #[test]
+    fn refuses_bodies_it_cannot_check() {
+        let policy = EgressPolicy::anthropic();
+        // Duplicate keys: the API might read a different copy than the policy did.
+        for body in [
+            "",
+            "not json",
+            "{",
+            "[]",
+            r#"[[{"type":"web_fetch_1"}]]"#,
+            "null",
+            r#""text""#,
+            r#"{"tools":{"type":"web_fetch_1"}}"#,
+            r#"{"tools":["web_fetch"]}"#,
+            r#"{"tools":[],"tools":[{"type":"web_fetch_1"}]}"#,
+            r#"{"tools":[{"type":"web_fetch_1"}],"tools":[]}"#,
+            r#"{"mcp_servers":[],"mcp_servers":[]}"#,
+            r#"{"model":"m"} trailing"#,
+        ] {
+            assert_eq!(
+                policy.prepare(post_body(body)).unwrap_err(),
+                PolicyError::BadBody,
+                "{body}"
+            );
+        }
+        let no_body = request("POST", "https://api.anthropic.com/v1/messages");
+        assert_eq!(policy.prepare(no_body).unwrap_err(), PolicyError::BadBody);
+    }
+
+    #[test]
+    fn checks_the_endpoint_before_parsing_the_body() {
+        let policy = EgressPolicy::anthropic();
+        let mut req = post_body("not json");
+        req.url = "https://api.anthropic.com/v1/files".into();
+        assert_eq!(policy.prepare(req).unwrap_err(), PolicyError::Destination);
+    }
+
+    #[test]
     fn rejects_relative_and_malformed_urls() {
         let policy = EgressPolicy::anthropic();
         for url in ["/v1/messages", "", "https://", "not a url"] {
@@ -306,9 +549,10 @@ mod tests {
     fn limits_the_body_to_32_mib() {
         let policy = EgressPolicy::anthropic();
         let mut req = post("https://api.anthropic.com/v1/messages");
-        req.body = Some("x".repeat(MAX_BODY_BYTES));
+        let json = |len: usize| format!(r#"{{"a":"{}"}}"#, "x".repeat(len - 8));
+        req.body = Some(json(MAX_BODY_BYTES));
         assert!(policy.prepare(req.clone()).is_ok());
-        req.body = Some("x".repeat(MAX_BODY_BYTES + 1));
+        req.body = Some(json(MAX_BODY_BYTES + 1));
         assert_eq!(policy.prepare(req).unwrap_err(), PolicyError::BodyTooLarge);
     }
 

@@ -1165,8 +1165,11 @@ cargo deny check
    - Run `pnpm --filter @typefaced/desktop tauri build --debug --no-bundle` and start the binary.
    - In its devtools console, `fetch('https://api.anthropic.com/v1/models')` must be blocked.
    - The CSP is defence in depth. The real key control is the Rust proxy.
-6. Run the `ecc:security-reviewer` agent on the diff, and fix every CRITICAL and HIGH finding.
-7. Write `docs/spikes/spike-4-ai-egress.md`, covering Steps 9.1 and 9.2. Set ADR-009 to Accepted or Rejected.
+6. **`anthropic-beta` allowlist in `tf-ai-host`.** Step 9.1 passes any `anthropic-beta` value through. Allow only the beta values the client actually sends (e.g. the one `fallbacks: "default"` needs) and refuse requests with any other value; tests first.
+7. Run the `ecc:security-reviewer` agent on the diff, and fix every CRITICAL and HIGH finding.
+8. Write `docs/spikes/spike-4-ai-egress.md`, covering Steps 9.1 and 9.2. Set ADR-009 to Accepted or Rejected, and record two accepted risks in it:
+   - script in the webview can replace or delete the stored key through `ai_set_key` / `ai_delete_key` without confirmation; the M3 native credential prompt closes this;
+   - the system proxy is honoured, so a TLS-inspecting proxy that the OS trusts could see the key; kept so that corporate networks work.
 
 **Verification.**
 ```bash
@@ -1363,3 +1366,4 @@ grep -l '^Status: Proposed' docs/adr/0*.md        # only ADRs of spikes marked S
 | 2026-09-29 | Step 1 gates answered: the repository stays public; LICENSE holder is Georgios-Chrysovalantis Chatzivantsidis; `main` gets a ruleset that requires pull requests | User decisions | User |
 | 2026-09-30 | App identifier changed from `com.typefaced.app` to `com.typefaced.desktop` (Step 2 text, keychain service names in Step 9.1) | Tauri warns that identifiers ending in `.app` clash with the macOS bundle extension | User |
 | 2026-10-05 | Step 9.1 as built: reqwest 0.13 with `native-tls` enabled explicitly (its default is rustls + aws-lc-rs); the keychain store is passed to `CredentialVault` instead of `set_default_store`; a hand-written mock HTTP server instead of wiremock (it must pause mid-body); response chunks are UTF-8 text; every app command, not only `ai_*`, is restricted to the main window by an app ACL manifest | Facts found while building the step; the exit criteria are unchanged | — |
+| 2026-10-05 | Step 9.1 egress policy narrowed: only POST `/v1/messages` and `/v1/messages/count_tokens` and GET `/v1/models[/{id}]` (exact match) instead of the `/v1/` prefix; POST bodies with `mcp_servers` or server-tool `type`s are refused. `anthropic-beta` still passes through unchanged; Step 9.2 gains a task for the beta allowlist and records two accepted risks in ADR-0009 (key replace/delete from the webview; system proxy honoured) | Security review of PR #13: server-side tools could carry data out through Anthropic | User |
