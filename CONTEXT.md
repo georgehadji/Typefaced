@@ -37,6 +37,7 @@ and version over typed IPC. The status of each step is in the table at the top o
 | Compiling a UFO or designspace to TTF, or a UFO to OTF | `crates/tf-compile/src/lib.rs` |
 | Writing a `CFF ` table from cubic outlines | `crates/tf-cff/src/lib.rs` |
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
+| AI egress: API key storage, request policy, streaming proxy | `crates/tf-ai-host/src/` → `apps/desktop/src-tauri/src/ai.rs` |
 | Geometry kernel (hit testing, point edits) | `crates/tf-geometry/src/lib.rs` → `crates/tf-wasm/src/lib.rs` → `packages/geometry-wasm` |
 | UI code | `apps/desktop/src/` |
 | Repository gates (layering, licenses, coverage, corpus) | `xtask/src/` |
@@ -59,6 +60,8 @@ and version over typed IPC. The status of each step is in the table at the top o
 | `apps/desktop/src-tauri/icons/` | [CONTEXT.md](apps/desktop/src-tauri/icons/CONTEXT.md) | App icons for the bundle |
 | `apps/desktop/src-tauri/src/` | [CONTEXT.md](apps/desktop/src-tauri/src/CONTEXT.md) | Tauri entry point and IPC registration |
 | `crates/` | [CONTEXT.md](crates/CONTEXT.md) | Rust library crates of the engine |
+| `crates/tf-ai-host/` | [CONTEXT.md](crates/tf-ai-host/CONTEXT.md) | AI egress host crate (adapter layer): API key in the OS keychain, streaming proxy to the Claude API |
+| `crates/tf-ai-host/src/` | [CONTEXT.md](crates/tf-ai-host/src/CONTEXT.md) | Vault, egress policy, egress host, usage ledger |
 | `crates/tf-cff/` | [CONTEXT.md](crates/tf-cff/CONTEXT.md) | CFF writer crate (domain layer): cubic outlines to a `CFF ` table |
 | `crates/tf-cff/src/` | [CONTEXT.md](crates/tf-cff/src/CONTEXT.md) | Builder, charstring encoder, byte encodings |
 | `crates/tf-cff/tests/` | [CONTEXT.md](crates/tf-cff/tests/CONTEXT.md) | Tables built and read back with read-fonts and skrifa |
@@ -176,6 +179,7 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   │   ├── icon.ico
 │   │   │   └── icon.png
 │   │   ├── src/
+│   │   │   ├── ai.rs
 │   │   │   ├── bench.rs
 │   │   │   ├── lib.rs
 │   │   │   └── main.rs
@@ -191,6 +195,15 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
 ├── crates/
+│   ├── tf-ai-host/
+│   │   ├── src/
+│   │   │   ├── host.rs
+│   │   │   ├── ledger.rs
+│   │   │   ├── lib.rs
+│   │   │   ├── policy.rs
+│   │   │   ├── test_server.rs
+│   │   │   └── vault.rs
+│   │   └── Cargo.toml
 │   ├── tf-cff/
 │   │   ├── src/
 │   │   │   ├── encode.rs

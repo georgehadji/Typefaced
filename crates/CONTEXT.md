@@ -7,6 +7,7 @@ pure: no I/O, no async runtime, no Tauri. Dependencies point inward only
 
 | Subfolder | Layer | Context |
 |---|---|---|
+| `tf-ai-host/` | adapter | [CONTEXT.md](tf-ai-host/CONTEXT.md): AI egress host, the API key in the OS keychain and a streaming proxy that adds it |
 | `tf-cff/` | domain | [CONTEXT.md](tf-cff/CONTEXT.md): minimal CFF writer, cubic outlines to a `CFF ` table |
 | `tf-commands/` | application | [CONTEXT.md](tf-commands/CONTEXT.md): typed command catalog shared by UI, AI, MCP and CLI |
 | `tf-compile/` | adapter | [CONTEXT.md](tf-compile/CONTEXT.md): compiles UFO and designspace sources to TTF through fontc, in-process, and TTF to OTF |
