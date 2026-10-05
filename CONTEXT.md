@@ -22,7 +22,7 @@ and WOFF2.
   `cargo xtask check-deps` enforces this.
 
 **Stage:** milestone M0 (foundations and technical spikes). The app shows its name and
-version over typed IPC, and its shell exposes the AI egress commands (no AI UI yet). The status of each step is in the table at the top of
+version over typed IPC, its shell exposes the AI egress commands, and `packages/ai` runs the Claude SDK over them (only a dev-only spike page uses it). The status of each step is in the table at the top of
 `plans/typefaced-m0-foundations-and-spikes.md`.
 
 ## Where to look for…
@@ -38,6 +38,7 @@ version over typed IPC, and its shell exposes the AI egress commands (no AI UI y
 | Writing a `CFF ` table from cubic outlines | `crates/tf-cff/src/lib.rs` |
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
 | AI egress: API key storage, request policy, streaming proxy | `crates/tf-ai-host/src/` → `apps/desktop/src-tauri/src/ai.rs` |
+| AI client in the webview (SDK, custom fetch, tools) | `packages/ai/src/` |
 | Geometry kernel (hit testing, point edits) | `crates/tf-geometry/src/lib.rs` → `crates/tf-wasm/src/lib.rs` → `packages/geometry-wasm` |
 | UI code | `apps/desktop/src/` |
 | Repository gates (layering, licenses, coverage, corpus) | `xtask/src/` |
@@ -55,6 +56,7 @@ version over typed IPC, and its shell exposes the AI egress commands (no AI UI y
 | `apps/` | [CONTEXT.md](apps/CONTEXT.md) | Runnable applications |
 | `apps/desktop/` | [CONTEXT.md](apps/desktop/CONTEXT.md) | Desktop app package: Vite, TypeScript and Vitest config |
 | `apps/desktop/src/` | [CONTEXT.md](apps/desktop/src/CONTEXT.md) | React UI |
+| `apps/desktop/src/ai-spike/` | [CONTEXT.md](apps/desktop/src/ai-spike/CONTEXT.md) | Dev-only AI spike page |
 | `apps/desktop/src/bench/` | [CONTEXT.md](apps/desktop/src/bench/CONTEXT.md) | Dev-only IPC and WASM benchmark page |
 | `apps/desktop/src-tauri/` | [CONTEXT.md](apps/desktop/src-tauri/CONTEXT.md) | Tauri shell crate (driver layer); also covers `capabilities/` |
 | `apps/desktop/src-tauri/icons/` | [CONTEXT.md](apps/desktop/src-tauri/icons/CONTEXT.md) | App icons for the bundle |
@@ -81,6 +83,8 @@ version over typed IPC, and its shell exposes the AI egress commands (no AI UI y
 | `docs/adr/` | [CONTEXT.md](docs/adr/CONTEXT.md) | Architecture decision records |
 | `docs/spikes/` | [CONTEXT.md](docs/spikes/CONTEXT.md) | Spike reports |
 | `packages/` | [CONTEXT.md](packages/CONTEXT.md) | Shared TypeScript packages |
+| `packages/ai/` | [CONTEXT.md](packages/ai/CONTEXT.md) | Claude client of the webview (Anthropic SDK over the Rust egress proxy) |
+| `packages/ai/src/` | [CONTEXT.md](packages/ai/src/CONTEXT.md) | `tauriFetch`, client and agent loop, demo tools |
 | `packages/bindings/` | [CONTEXT.md](packages/bindings/CONTEXT.md) | Generated IPC bindings package |
 | `packages/bindings/src/` | [CONTEXT.md](packages/bindings/src/CONTEXT.md) | The generated `index.ts` |
 | `packages/geometry-wasm/` | [CONTEXT.md](packages/geometry-wasm/CONTEXT.md) | Geometry kernel compiled to WebAssembly (`pkg/` is generated) |
@@ -141,6 +145,10 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   └── pull_request_template.md
 ├── apps/desktop/
 │   ├── src/
+│   │   ├── ai-spike/
+│   │   │   ├── AiSpikePage.test.tsx
+│   │   │   ├── AiSpikePage.tsx
+│   │   │   └── ai-spike.css
 │   │   ├── bench/
 │   │   │   ├── BenchPage.test.tsx
 │   │   │   ├── BenchPage.tsx
@@ -265,11 +273,25 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── spike-2-cff.md
 │   │   ├── spike-2-fontview-inria-sans.png
 │   │   ├── spike-3-ipc.md
+│   │   ├── spike-4-ai-egress.md
 │   │   ├── spike-5-boolean.md
 │   │   └── spike-6-collections.md
 │   ├── implementation-plan.md
 │   └── research.md
 ├── packages/
+│   ├── ai/
+│   │   ├── src/
+│   │   │   ├── agent.test.ts
+│   │   │   ├── agent.ts
+│   │   │   ├── fakeProxy.ts
+│   │   │   ├── fontTools.test.ts
+│   │   │   ├── fontTools.ts
+│   │   │   ├── index.ts
+│   │   │   ├── tauriFetch.test.ts
+│   │   │   └── tauriFetch.ts
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── vitest.config.ts
 │   ├── bindings/
 │   │   ├── src/index.ts
 │   │   ├── package.json

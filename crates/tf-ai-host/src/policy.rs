@@ -1,6 +1,6 @@
 //! `EgressPolicy`: decides whether a request from the webview may leave the machine, and
 //! rebuilds it with only the allowed parts: one origin, four endpoints, client tools only,
-//! a size limit and a header allowlist.
+//! a size limit, a header allowlist and an `anthropic-beta` value allowlist.
 
 use reqwest::Method;
 use reqwest::Url;
@@ -24,6 +24,10 @@ const PASSED_HEADERS: [&str; 4] = [
     "content-type",
     "accept",
 ];
+
+/// The `anthropic-beta` values that pass: only those the webview client sends
+/// (`packages/ai`: `fallbacks: "default"`). One header may list several, comma-separated.
+const ALLOWED_BETAS: [&str; 1] = ["server-side-fallback-2026-07-01"];
 
 /// A request as the webview's `fetch` describes it, before any check.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
@@ -64,6 +68,10 @@ pub enum PolicyError {
     Destination,
     #[error("a forwarded header has an invalid name or value")]
     BadHeader,
+    #[error("an anthropic-beta value is not allowed; allowed values: {}", ALLOWED_BETAS.join(", "))]
+    Beta,
+    #[error("the request body has a top-level field the client does not send")]
+    BodyField,
     #[error("the request body is larger than {} MiB", MAX_BODY_BYTES >> 20)]
     BodyTooLarge,
     #[error("a GET request cannot have a body")]
@@ -211,10 +219,20 @@ fn passed_headers(raw: &[(String, String)]) -> Result<HeaderMap, PolicyError> {
         else {
             continue;
         };
+        if *allowed == "anthropic-beta" && !beta_allowed(value) {
+            return Err(PolicyError::Beta);
+        }
         let value = HeaderValue::from_str(value).map_err(|_| PolicyError::BadHeader)?;
         headers.append(HeaderName::from_static(allowed), value);
     }
     Ok(headers)
+}
+
+/// Every comma-separated value is in [`ALLOWED_BETAS`] (exact match after trimming).
+fn beta_allowed(value: &str) -> bool {
+    value
+        .split(',')
+        .all(|beta| ALLOWED_BETAS.contains(&beta.trim_matches([' ', '\t'])))
 }
 
 #[cfg(test)]
@@ -381,7 +399,7 @@ mod tests {
             r#"{"mcp_servers":[{"type":"url","url":"https://evil.example/mcp"}]}"#,
             r#"{"mcp_servers":null}"#,
             r#"{"mcp_servers":[]}"#,
-            r#"{"mcp_servers":[]}"#,
+            r#"{"mcp\u005fservers":[]}"#,
             r#"{"tools":[{"type":"web_fetch_20250910","name":"web_fetch"}]}"#,
             r#"{"tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
             r#"{"tools":[{"type":"code_execution_20250825","name":"code_execution"}]}"#,
@@ -461,7 +479,7 @@ mod tests {
             r#"{"x":{"source":{"type":null}}}"#.to_owned(),
             r#"{"x":{"source":{"url":"https://evil.example/"}}}"#.to_owned(),
             r#"{"x":{"source":{"type":"url"}}}"#.to_owned(),
-            r#"{"x":{"source":{"type":"url"}}}"#.to_owned(),
+            r#"{"x":{"source":{"type":"u\u0072l"}}}"#.to_owned(),
             format!(r#"{{"x":{{"source":{{"type":"{}"}}}}}}"#, "b".repeat(65)),
             r#"{"x":{"source":{"type":"content","content":[{"type":"image","source":{"type":"url","url":"u"}}]}}}"#.to_owned(),
             r#"{"x":{"source":["url"]}}"#.to_owned(),
@@ -619,8 +637,8 @@ mod tests {
         let mut req = post("https://api.anthropic.com/v1/messages");
         req.headers = [
             ("Anthropic-Version", "2023-06-01"),
-            ("anthropic-beta", "a"),
-            ("anthropic-beta", "b"),
+            ("anthropic-beta", FALLBACK),
+            ("anthropic-beta", " server-side-fallback-2026-07-01 "),
             ("Content-Type", "application/json"),
             ("accept", "text/event-stream"),
             ("x-api-key", "test-key-from-js"),
@@ -640,7 +658,7 @@ mod tests {
         assert_eq!(headers["anthropic-version"], "2023-06-01");
         assert_eq!(
             headers.get_all("anthropic-beta").iter().collect::<Vec<_>>(),
-            ["a", "b"]
+            [FALLBACK, " server-side-fallback-2026-07-01 "]
         );
         assert_eq!(headers["content-type"], "application/json");
         assert_eq!(headers["accept"], "text/event-stream");
@@ -653,6 +671,189 @@ mod tests {
         ] {
             assert!(!headers.contains_key(dropped), "{dropped}");
         }
+    }
+
+    const FALLBACK: &str = "server-side-fallback-2026-07-01";
+
+    fn with_beta(values: &[&str]) -> ProxyRequest {
+        let mut req = post("https://api.anthropic.com/v1/messages");
+        req.headers = values
+            .iter()
+            .map(|v| ("Anthropic-Beta".to_owned(), (*v).to_owned()))
+            .collect();
+        req
+    }
+
+    #[test]
+    fn allows_only_the_beta_the_client_sends() {
+        let policy = EgressPolicy::anthropic();
+        for values in [
+            &[][..],
+            &[FALLBACK][..],
+            &[FALLBACK, FALLBACK][..],
+            &["server-side-fallback-2026-07-01,server-side-fallback-2026-07-01"][..],
+        ] {
+            assert!(policy.prepare(with_beta(values)).is_ok(), "{values:?}");
+        }
+        let get = ProxyRequest {
+            headers: vec![("anthropic-beta".into(), FALLBACK.into())],
+            ..request("GET", "https://api.anthropic.com/v1/models")
+        };
+        assert!(policy.prepare(get).is_ok());
+    }
+
+    #[test]
+    fn refuses_every_other_beta() {
+        let policy = EgressPolicy::anthropic();
+        for values in [
+            &["mcp-client-2025-11-20"][..],
+            &["code-execution-2025-08-25"][..],
+            &["server-side-fallback-2026-06-01"][..],
+            &["files-api-2025-04-14"][..],
+            &["oauth-2025-04-20"][..],
+            &["Server-Side-Fallback-2026-07-01"][..],
+            &[FALLBACK, "mcp-client-2025-11-20"][..],
+            &["server-side-fallback-2026-07-01,mcp-client-2025-11-20"][..],
+            &["server-side-fallback-2026-07-01,"][..],
+            &[""][..],
+        ] {
+            assert_eq!(
+                policy.prepare(with_beta(values)).unwrap_err(),
+                PolicyError::Beta,
+                "{values:?}"
+            );
+        }
+        let get = ProxyRequest {
+            headers: vec![("anthropic-beta".into(), "mcp-client-2025-11-20".into())],
+            ..request("GET", "https://api.anthropic.com/v1/models")
+        };
+        assert_eq!(policy.prepare(get).unwrap_err(), PolicyError::Beta);
+    }
+
+    #[test]
+    fn trims_only_http_whitespace_around_a_beta() {
+        let policy = EgressPolicy::anthropic();
+        let spaced = format!(" {FALLBACK}\t,\t{FALLBACK} ");
+        assert!(policy.prepare(with_beta(&[&spaced])).is_ok());
+        for value in [
+            " ".to_owned(),
+            format!("{}{FALLBACK}", char::from(0xA0)),
+            format!("{FALLBACK}{}", char::from(0x0B)),
+        ] {
+            assert_eq!(
+                policy.prepare(with_beta(&[&value])).unwrap_err(),
+                PolicyError::Beta,
+                "{value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_a_bad_beta_before_looking_at_the_body() {
+        let mut req = post_body(r#"{"tool_choice":{"type":"auto"}}"#);
+        req.headers = vec![("anthropic-beta".into(), "mcp-client-2025-11-20".into())];
+        assert_eq!(
+            EgressPolicy::anthropic().prepare(req).unwrap_err(),
+            PolicyError::Beta
+        );
+    }
+
+    #[test]
+    fn allows_only_the_default_fallback() {
+        let policy = EgressPolicy::anthropic();
+        assert!(
+            policy
+                .prepare(post_body(r#"{"fallbacks":"default"}"#))
+                .is_ok()
+        );
+        for body in [
+            r#"{"fallbacks":[{"model":"claude-opus-4-8"}]}"#,
+            r#"{"fallbacks":[{"model":"m","tools":[{"type":"web_search_20250305"}]}]}"#,
+            r#"{"fallbacks":"Default"}"#,
+            r#"{"fallbacks":null}"#,
+            r#"{"fallbacks":{}}"#,
+        ] {
+            assert_eq!(
+                policy.prepare(post_body(body)).unwrap_err(),
+                PolicyError::BodyField,
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_the_top_level_fields_the_client_sends() {
+        let policy = EgressPolicy::anthropic();
+        let body = r#"{"model":"claude-opus-5-5","max_tokens":64000,
+            "messages":[{"role":"user","content":"hi"}],"system":"s",
+            "tools":[{"type":"custom","name":"t","input_schema":{},"eager_input_streaming":true}],
+            "thinking":{"type":"adaptive"},"output_config":{"effort":"medium"},
+            "stream":true,"fallbacks":"default"}"#;
+        assert!(policy.prepare(post_body(body)).is_ok());
+        let count = ProxyRequest {
+            body: Some(r#"{"model":"m","messages":[],"tools":[],"system":"s"}"#.into()),
+            ..request("POST", "https://api.anthropic.com/v1/messages/count_tokens")
+        };
+        assert!(policy.prepare(count).is_ok());
+    }
+
+    #[test]
+    fn refuses_every_other_top_level_field() {
+        let policy = EgressPolicy::anthropic();
+        for field in [
+            "tool_choice",
+            "metadata",
+            "temperature",
+            "top_p",
+            "top_k",
+            "stop_sequences",
+            "container",
+            "context_management",
+            "speed",
+            "service_tier",
+            "inference_geo",
+            "Model",
+            "x",
+            "",
+        ] {
+            let body = format!(r#"{{"model":"m","{field}":1}}"#);
+            assert_eq!(
+                policy.prepare(post_body(&body)).unwrap_err(),
+                PolicyError::BodyField,
+                "{field}"
+            );
+            let count = ProxyRequest {
+                body: Some(body),
+                ..request("POST", "https://api.anthropic.com/v1/messages/count_tokens")
+            };
+            assert_eq!(
+                policy.prepare(count).unwrap_err(),
+                PolicyError::BodyField,
+                "{field}"
+            );
+        }
+        // Field names are matched with JSON escapes decoded, as the API reads them.
+        assert_eq!(
+            policy
+                .prepare(post_body(r#"{"tool\u005fchoice":{"type":"auto"}}"#))
+                .unwrap_err(),
+            PolicyError::BodyField
+        );
+        assert!(policy.prepare(post_body(r#"{"m\u006fdel":"m"}"#)).is_ok());
+        assert_eq!(
+            policy
+                .prepare(post_body(r#"{"m\u006fdel":"a","model":"b"}"#))
+                .unwrap_err(),
+            PolicyError::BadBody
+        );
+        // Nested objects keep their own fields: only the top level is checked here.
+        assert!(
+            policy
+                .prepare(post_body(
+                    r#"{"messages":[{"role":"user","content":"x","metadata":1}]}"#
+                ))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -672,7 +873,7 @@ mod tests {
     fn limits_the_body_to_32_mib() {
         let policy = EgressPolicy::anthropic();
         let mut req = post("https://api.anthropic.com/v1/messages");
-        let json = |len: usize| format!(r#"{{"a":"{}"}}"#, "x".repeat(len - 8));
+        let json = |len: usize| format!(r#"{{"system":"{}"}}"#, "x".repeat(len - 13));
         req.body = Some(json(MAX_BODY_BYTES));
         assert!(policy.prepare(req.clone()).is_ok());
         req.body = Some(json(MAX_BODY_BYTES + 1));

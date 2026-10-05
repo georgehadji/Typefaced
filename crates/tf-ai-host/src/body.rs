@@ -1,7 +1,8 @@
-//! Checks a POST body before it is forwarded: one JSON object, no duplicate keys, no
-//! server-side tools or MCP servers, and no content `source` the API would fetch from
-//! elsewhere (only inline `base64`, `text` and `content` sources). The tests are in
-//! `policy.rs`, through `EgressPolicy::prepare`.
+//! Checks a POST body before it is forwarded: one JSON object, no duplicate keys, only
+//! the top-level fields the webview client sends, no server-side tools or MCP servers,
+//! and no content `source` the API would fetch from elsewhere (only inline `base64`,
+//! `text` and `content` sources). The tests are in `policy.rs`, through
+//! `EgressPolicy::prepare`.
 
 use std::collections::HashSet;
 
@@ -17,11 +18,17 @@ const INLINE_SOURCES: [&str; 3] = ["base64", "text", "content"];
 /// Marks the walk error that means "a source the API would fetch".
 const FETCHED_SOURCE: &str = "fetched content source";
 
+/// The start of serde's `Error::unknown_field` text (serde 1.x), which
+/// `deny_unknown_fields` raises after JSON escapes in the name are decoded. If the
+/// wording ever changed, such bodies would be refused as `BadBody` instead.
+const UNKNOWN_FIELD: &str = "unknown field";
+
 /// Longest string kept by the walk; every `type` value is far shorter.
 const MAX_TYPE_BYTES: usize = 64;
 
 /// Refuses bodies that ask for server-side tools, MCP servers or content the API would
-/// fetch from elsewhere, and bodies that are not one JSON object without duplicate keys.
+/// fetch from elsewhere, bodies with a top-level field the client does not send, and
+/// bodies that are not one JSON object without duplicate keys.
 pub(crate) fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
     let body = body.ok_or(PolicyError::BadBody)?;
     // serde would also read a JSON array into a struct, by position.
@@ -36,7 +43,22 @@ pub(crate) fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
             PolicyError::BadBody
         });
     }
-    let fields: BodyFields = serde_json::from_str(body).map_err(|_| PolicyError::BadBody)?;
+    let fields: BodyFields = serde_json::from_str(body).map_err(|error| {
+        if error.to_string().starts_with(UNKNOWN_FIELD) {
+            PolicyError::BodyField
+        } else {
+            PolicyError::BadBody
+        }
+    })?;
+    // The client sends only the server-chosen fallback; a fallback list could carry
+    // per-model overrides that this check does not look into.
+    if fields
+        .fallbacks
+        .0
+        .is_some_and(|value| value.as_str() != Some("default"))
+    {
+        return Err(PolicyError::BodyField);
+    }
     let server_tool = fields
         .tools
         .iter()
@@ -141,15 +163,36 @@ impl<'de> Visitor<'de> for WalkVisitor {
     }
 }
 
-/// The top-level fields of a messages body that can turn on server-side work. Field
-/// matching sees JSON escapes decoded, and a duplicate field is an error, so the API
-/// cannot read a different copy than this check did.
+/// The top-level fields of a messages body. Only the fields the webview client sends
+/// (`packages/ai`) are allowed; any other is refused (`deny_unknown_fields`).
+/// `mcp_servers` is listed only to be refused as a server feature. Field matching sees
+/// JSON escapes decoded, and a duplicate field is an error, so the API cannot read a
+/// different copy than this check did.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[expect(dead_code, reason = "most fields exist only to be allowed; never read")]
 struct BodyFields {
     #[serde(default)]
     mcp_servers: Present,
     #[serde(default)]
     tools: Option<Vec<ToolFields>>,
+    #[serde(default)]
+    model: Present,
+    #[serde(default)]
+    max_tokens: Present,
+    #[serde(default)]
+    messages: Present,
+    #[serde(default)]
+    system: Present,
+    #[serde(default)]
+    thinking: Present,
+    #[serde(default)]
+    output_config: Present,
+    #[serde(default)]
+    stream: Present,
+    /// Only `"default"` passes (checked in `check_body`).
+    #[serde(default)]
+    fallbacks: Present<serde_json::Value>,
 }
 
 #[derive(Deserialize)]

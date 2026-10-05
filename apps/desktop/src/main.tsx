@@ -15,6 +15,13 @@ function render() {
     );
     return;
   }
+  // The AI spike page (M0 Step 9.2) is dev-only too, gated the same way.
+  if (import.meta.env.DEV && window.location.hash === "#/ai-spike") {
+    void import("./ai-spike/AiSpikePage").then(({ default: AiSpikePage }) =>
+      root.render(<AiSpikePage />),
+    );
+    return;
+  }
   root.render(
     <React.StrictMode>
       <App />

@@ -13,6 +13,7 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
+    "@typefaced/ai": "workspace:*",
     "@typefaced/bindings": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

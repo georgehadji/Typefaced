@@ -16,7 +16,8 @@ Source: [implementation plan](../implementation-plan.md) §1 (D3), §3.4, §5.10
   - `betaTool()` does not validate at runtime, so every tool's `run` function validates its input with Ajv against the same schema before dispatching it.
   - Approval gates live inside `run`. Tools with side-effect class E or D ask the user, and return a "user declined" result when refused.
 - **The SDK's HTTP traffic goes through a Rust egress proxy** (§6.2). A custom `fetch` forwards each request over Tauri IPC to `tf-ai-host`, which:
-  - forwards only to allowlisted hosts: `api.anthropic.com`, and later the Typefaced gateway (§6.2). In M0 that means only `https://api.anthropic.com` with path prefix `/v1/`, and only the methods POST and GET (Step 9.1);
+  - forwards only to allowlisted hosts: `api.anthropic.com`, and later the Typefaced gateway (§6.2). In M0 that means only `https://api.anthropic.com`, and there only POST `/v1/messages` and `/v1/messages/count_tokens` and GET `/v1/models[/{id}]` (Step 9.1, narrowed after its security review);
+  - forwards only what the client actually sends: the `anthropic-beta` values it uses (in M0 only `server-side-fallback-2026-07-01`) and the top-level body fields it uses (`model`, `max_tokens`, `messages`, `system`, `tools`, `thinking`, `output_config`, `stream`, `fallbacks`, the last only as `"default"`). It refuses server-side tools, `mcp_servers` and content sources the API would fetch from a URL or file (Steps 9.1 and 9.2). A new SDK feature therefore needs a deliberate change to the allowlists;
   - strips incoming `x-api-key`, `authorization` and `cookie` headers, and injects `x-api-key` from the OS keychain (Step 9.1);
   - streams the response back over a Tauri channel;
   - records usage in the budget ledger, writes the audit log, and enforces per-project AI permissions and a kill switch (§6.2);
@@ -24,7 +25,7 @@ Source: [implementation plan](../implementation-plan.md) §1 (D3), §3.4, §5.10
 - **The key lives only in the OS keychain** (Windows Credential Manager, through `keyring`), behind the `CredentialVault` port (§5.10). No command returns the key (Step 9.1).
 - **`@tauri-apps/plugin-http` is not used:** it would need the key in JavaScript (Step 9.1).
 - **An `LlmClient` port** (§6.2): Anthropic direct, with the user's own key, in 1.0. A Typefaced Cloud gateway, if it is built, changes only the `baseURL` and the credential (§6.10).
-- **SDK option names are never guessed.** The exact option for the custom `fetch` is confirmed in Spike 4 (§6.2, §13.1).
+- **SDK option names are never guessed.** Spike 4 confirmed them for `@anthropic-ai/sdk` 0.131.0: the client takes `fetch` (the custom fetch), `apiKey` (a placeholder, `"injected-by-rust"`) and `dangerouslyAllowBrowser: true` (§6.2, §13.1; [spike report](../spikes/spike-4-ai-egress.md)).
 
 ### Key entry: a deliberate exception (deviation 9)
 
@@ -34,13 +35,22 @@ Source: [implementation plan](../implementation-plan.md) §1 (D3), §3.4, §5.10
 - **The cost:** while the key is being typed and sent, script running in the webview could read it. The webview XSS controls (strict CSP, no remote content, sanitised markdown, minimal Tauri capabilities; §11.1) lower this risk but do not remove it.
 - **M3 evaluates a native OS credential prompt** instead, which would keep the key out of the webview entirely.
 
+### Accepted risks
+
+Two risks remain after Steps 9.1 and 9.2. The user accepted both in the review of Step 9.1.
+
+1. **Script in the webview can replace or delete the stored key without confirmation.** `ai_set_key` and `ai_delete_key` are callable from the main window, so an XSS bug could overwrite the key with another one (the user's requests would then run on someone else's account) or delete it. It cannot read the key. **Closed in M3** by the native OS credential prompt: key entry and deletion move out of the webview, and these two commands go away.
+2. **The system proxy is honoured.** `tf-ai-host` uses the OS proxy settings, so a TLS-inspecting proxy whose root certificate the OS trusts (common on corporate networks) can see the key and the traffic. This is kept so that the app works on corporate networks, where such a proxy is often the only way out. The OS trust store is outside the app's control either way.
+
 ## Consequences
 
 - The SDK absorbs API changes and provides the tool runner, streaming and context-management helpers (§3.4).
 - After entry, script in the webview cannot get the key back: no command returns it.
 - Streaming crosses IPC. The JavaScript `fetch` resolves as soon as the response head arrives; the body follows in chunks (Step 9.1).
-- The SDK will probably need `dangerouslyAllowBrowser: true` and a placeholder `apiKey`, such as `"injected-by-rust"`. That is acceptable only because Rust adds the real key (Step 9.2).
+- The SDK needs `dangerouslyAllowBrowser: true` and a placeholder `apiKey` (`"injected-by-rust"`). That is acceptable only because Rust drops it and adds the real key (Step 9.2).
 - The CSP is defence in depth. The real key control is the Rust proxy (Step 9.2).
+- Ajv compiles validators with `new Function`, which the shipped CSP (no `'unsafe-eval'`) blocks. The dev-only spike page runs under `tauri dev`, where Tauri applies no CSP; production code must use Ajv's precompiled (standalone) validators (Step 9.2).
+- Every request goes through the allowlists, so adopting a new API feature (another beta, another body field) is a deliberate change to `tf-ai-host` with a test.
 
 ## Alternatives considered
 
@@ -65,4 +75,4 @@ Step 9.2 exit criteria (the ADR-0009 pass criteria):
 - The mutation tool needs approval.
 - The security review has no open CRITICAL or HIGH findings.
 
-Step 9.2 also runs a live smoke test (a GATE: the user enters the key and approves a rename) and a CSP check in a debug build. It then sets this ADR to Accepted or Rejected.
+Step 9.2 also runs a live smoke test (a GATE: the user enters the key and approves a rename) and a CSP check in a debug build. It then sets this ADR to Accepted or Rejected. Results: [spike report](../spikes/spike-4-ai-egress.md).
