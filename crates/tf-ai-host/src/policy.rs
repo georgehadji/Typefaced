@@ -4,9 +4,11 @@
 
 use reqwest::Method;
 use reqwest::Url;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
 use specta::Type;
+
+use crate::body::check_body;
 
 /// The only destination in M0: the Claude API.
 pub const ANTHROPIC_ORIGIN: &str = "https://api.anthropic.com";
@@ -112,17 +114,20 @@ impl EgressPolicy {
         if method == Method::GET && request.body.is_some() {
             return Err(PolicyError::BodyOnGet);
         }
-        if !endpoint_allowed(&method, url.path()) {
+        if !endpoint_allowed(&method, url.path()) || !query_allowed(&method, &url) {
             return Err(PolicyError::Destination);
         }
+        let mut headers = passed_headers(&request.headers)?;
         // Only the two POST endpoints take a body; parsed only after the checks above.
         if method == Method::POST {
             check_body(request.body.as_deref())?;
+            // The API must read the body as the JSON that was checked, nothing else.
+            headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         }
         Ok(PreparedRequest {
             method,
             url,
-            headers: passed_headers(&request.headers)?,
+            headers,
             body: request.body,
         })
     }
@@ -165,55 +170,26 @@ fn endpoint_allowed(method: &Method, path: &str) -> bool {
     })
 }
 
-/// The top-level fields of a messages body that can turn on server-side work. Field
-/// matching sees JSON escapes decoded, and a duplicate field is an error, so the API
-/// cannot read a different copy than this check did.
-#[derive(Deserialize)]
-struct BodyFields {
-    #[serde(default)]
-    mcp_servers: Present,
-    #[serde(default)]
-    tools: Option<Vec<ToolFields>>,
-}
-
-#[derive(Deserialize)]
-struct ToolFields {
-    /// Absent for client tools; `"custom"` is the explicit client-tool type.
-    #[serde(rename = "type", default)]
-    kind: Present<serde_json::Value>,
-}
-
-/// Whether a field was present (with any value, `null` included), and its value.
-#[derive(Default)]
-struct Present<T = serde::de::IgnoredAny>(Option<T>);
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Present<T> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        T::deserialize(deserializer).map(|value| Self(Some(value)))
+/// The query parameters the SDK sends: `beta=true` on every endpoint, and the paging
+/// parameters on GET. No other parameter, no parameter twice, no empty `?`.
+fn query_allowed(method: &Method, url: &Url) -> bool {
+    let Some(query) = url.query() else {
+        return true;
+    };
+    let mut seen = Vec::new();
+    for pair in query.split('&') {
+        let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let known = match name {
+            "beta" => value == "true",
+            "limit" | "before_id" | "after_id" => *method == Method::GET,
+            _ => false,
+        };
+        if !known || seen.contains(&name) {
+            return false;
+        }
+        seen.push(name);
     }
-}
-
-/// Refuses bodies that ask for server-side tools or MCP servers, and bodies that are not
-/// one JSON object.
-fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
-    let body = body.ok_or(PolicyError::BadBody)?;
-    // serde would also read a JSON array into the struct, by position.
-    if !body.trim_start().starts_with('{') {
-        return Err(PolicyError::BadBody);
-    }
-    let fields: BodyFields = serde_json::from_str(body).map_err(|_| PolicyError::BadBody)?;
-    let server_tool = fields
-        .tools
-        .iter()
-        .flatten()
-        .any(|tool| match &tool.kind.0 {
-            None => false,
-            Some(kind) => kind.as_str() != Some("custom"),
-        });
-    if fields.mcp_servers.0.is_some() || server_tool {
-        return Err(PolicyError::ServerTools);
-    }
-    Ok(())
+    true
 }
 
 fn allowed_method(raw: &str) -> Result<Method, PolicyError> {
@@ -460,6 +436,142 @@ mod tests {
         }
         let no_body = request("POST", "https://api.anthropic.com/v1/messages");
         assert_eq!(policy.prepare(no_body).unwrap_err(), PolicyError::BadBody);
+    }
+
+    #[test]
+    fn refuses_content_the_api_would_fetch_from_a_url() {
+        let policy = EgressPolicy::anthropic();
+        let url_image =
+            r#"{"type":"image","source":{"type":"url","url":"https://evil.example/x.png"}}"#;
+        let url_document =
+            r#"{"type":"document","source":{"type":"url","url":"https://evil.example/d.pdf"}}"#;
+        for body in [
+            format!(r#"{{"messages":[{{"role":"user","content":[{url_image}]}}]}}"#),
+            format!(r#"{{"messages":[{{"role":"user","content":[{url_document}]}}]}}"#),
+            format!(
+                r#"{{"messages":[{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"t","content":[{url_image}]}}]}}]}}"#
+            ),
+            format!(r#"{{"system":[{url_document}]}}"#),
+            r#"{"x":{"source":{"type":"file","file_id":"f"}}}"#.to_owned(),
+            r#"{"x":{"source":{"type":null}}}"#.to_owned(),
+            r#"{"x":{"source":{"url":"https://evil.example/"}}}"#.to_owned(),
+            r#"{"x":{"source":{"type":"url"}}}"#.to_owned(),
+        ] {
+            assert_eq!(
+                policy.prepare(post_body(&body)).unwrap_err(),
+                PolicyError::ServerTools,
+                "{body}"
+            );
+            let count = ProxyRequest {
+                body: Some(body.clone()),
+                ..request("POST", "https://api.anthropic.com/v1/messages/count_tokens")
+            };
+            assert_eq!(
+                policy.prepare(count).unwrap_err(),
+                PolicyError::ServerTools,
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_inline_content_sources() {
+        let policy = EgressPolicy::anthropic();
+        for body in [
+            r#"{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}"#,
+            r#"{"messages":[{"role":"user","content":[{"type":"document","source":{"type":"text","media_type":"text/plain","data":"hi"}}]}]}"#,
+            r#"{"messages":[{"role":"user","content":[{"type":"document","source":{"type":"content","content":[{"type":"text","text":"hi"}]}}]}]}"#,
+            r#"{"messages":[{"role":"user","content":[{"type":"search_result","source":"https://example.com","title":"t","content":[]}]}]}"#,
+        ] {
+            assert!(policy.prepare(post_body(body)).is_ok(), "{body}");
+        }
+    }
+
+    #[test]
+    fn refuses_duplicate_keys_anywhere_in_the_body() {
+        let policy = EgressPolicy::anthropic();
+        for body in [
+            r#"{"model":"a","model":"b"}"#,
+            r#"{"messages":[{"role":"user","role":"assistant"}]}"#,
+            r#"{"a":{"b":{"c":1,"c":2}}}"#,
+            r#"{"a":1,"a":2}"#,
+            r#"{"x":{"source":{"type":"base64","type":"url"}}}"#,
+        ] {
+            assert_eq!(
+                policy.prepare(post_body(body)).unwrap_err(),
+                PolicyError::BadBody,
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_post_is_always_sent_as_json() {
+        let mut req = post_body("{}");
+        req.headers = vec![(
+            "content-type".into(),
+            "application/x-www-form-urlencoded".into(),
+        )];
+        let headers = EgressPolicy::anthropic().prepare(req).unwrap().headers;
+        assert_eq!(
+            headers.get_all("content-type").iter().collect::<Vec<_>>(),
+            ["application/json"]
+        );
+    }
+
+    #[test]
+    fn allows_only_the_known_query_parameters() {
+        let policy = EgressPolicy::anthropic();
+        let base = "https://api.anthropic.com";
+        for url in [
+            "/v1/messages",
+            "/v1/messages?beta=true",
+            "/v1/messages/count_tokens?beta=true",
+        ] {
+            assert!(
+                policy.prepare(post(&format!("{base}{url}"))).is_ok(),
+                "{url}"
+            );
+        }
+        for url in [
+            "/v1/models",
+            "/v1/models?limit=20",
+            "/v1/models?beta=true&limit=5&after_id=a&before_id=b",
+            "/v1/models/claude-opus-5?beta=true",
+        ] {
+            assert!(
+                policy
+                    .prepare(request("GET", &format!("{base}{url}")))
+                    .is_ok(),
+                "{url}"
+            );
+        }
+        for url in [
+            "/v1/messages?beta=false",
+            "/v1/messages?beta=true&x=1",
+            "/v1/messages?",
+            "/v1/messages?beta=true&beta=true",
+            "/v1/messages?limit=5",
+        ] {
+            assert_eq!(
+                policy.prepare(post(&format!("{base}{url}"))).unwrap_err(),
+                PolicyError::Destination,
+                "POST {url}"
+            );
+        }
+        for url in [
+            "/v1/models?x=1",
+            "/v1/models?beta=false",
+            "/v1/models?limit=1&limit=2",
+        ] {
+            assert_eq!(
+                policy
+                    .prepare(request("GET", &format!("{base}{url}")))
+                    .unwrap_err(),
+                PolicyError::Destination,
+                "GET {url}"
+            );
+        }
     }
 
     #[test]

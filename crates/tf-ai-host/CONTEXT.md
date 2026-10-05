@@ -11,4 +11,4 @@ back. Nothing in its public API returns the key. Up: [crates/CONTEXT.md](../CONT
 
 | Subfolder | Context |
 |---|---|
-| `src/` | [CONTEXT.md](src/CONTEXT.md): vault, egress policy, egress host, usage ledger, test server |
+| `src/` | [CONTEXT.md](src/CONTEXT.md): vault, egress policy, body check, egress host, usage ledger, test server |
