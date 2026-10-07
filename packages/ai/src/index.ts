@@ -1,12 +1,15 @@
-// `@typefaced/ai`: the Claude client for the webview over the Rust egress proxy (ADR-0009).
+// `@typefaced/ai`: the Claude client for the webview, via OpenRouter, over the Rust egress
+// proxy (ADR-0009).
 export {
   type AgentOptions,
   type AgentOutcome,
   createClaudeClient,
-  FALLBACK_BETA,
   KEY_PLACEHOLDER,
-  MODEL,
+  OPENROUTER_BASE_URL,
+  ROUTES,
+  type Route,
   runAgent,
+  type Task,
 } from "./agent";
 export {
   type ApprovalRequest,

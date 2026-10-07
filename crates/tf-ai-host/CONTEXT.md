@@ -1,8 +1,8 @@
 # crates/tf-ai-host/
 
 Crate `tf-ai-host`, layer `adapter`: the Rust half of the in-app AI (ADR-0009,
-implementation plan §6.2). It keeps the Claude API key in the OS keychain and forwards
-the webview SDK's requests to the Claude API with the key added, streaming the response
+implementation plan §6.2). It keeps the OpenRouter API key in the OS keychain and forwards
+the webview SDK's requests to OpenRouter's Messages API with the key added, streaming the response
 back. Nothing in its public API returns the key. Up: [crates/CONTEXT.md](../CONTEXT.md).
 
 | File | What it does |

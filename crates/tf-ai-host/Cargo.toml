@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "AI egress host: the Claude API key in the OS keychain and a streaming proxy that injects it (ADR-0009)"
+description = "AI egress host: the OpenRouter API key in the OS keychain and a streaming proxy that injects it (ADR-0009)"
 
 [package.metadata.typefaced]
 layer = "adapter"

@@ -15,27 +15,16 @@ const MAX_FIELD_CHARS: usize = 128;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageRecord {
-    /// The API's `request-id` response header.
+    /// OpenRouter's `x-generation-id` response header (else `request-id`).
     pub request_id: Option<String>,
-    /// The `model` field of the JSON request body.
+    /// The `model` field of the JSON request body (the requested model; a fallback that
+    /// served the request is not seen here).
     pub model: Option<String>,
     /// HTTP status, if a response arrived.
     pub status: Option<u16>,
     pub duration_ms: u64,
     pub request_bytes: u64,
     pub response_bytes: u64,
-}
-
-impl UsageRecord {
-    /// The `model` field of a JSON body, shortened to a safe length.
-    pub fn model_of(body: Option<&str>) -> Option<String> {
-        #[derive(serde::Deserialize)]
-        struct Model {
-            model: Option<String>,
-        }
-        let model = serde_json::from_str::<Model>(body?).ok()?.model?;
-        Some(shorten(&model))
-    }
 }
 
 /// Shortens untrusted text before it is written.
@@ -93,7 +82,7 @@ pub(crate) mod tests {
         let (ledger, path) = temp_ledger("append");
         let record = UsageRecord {
             request_id: Some("req_1".into()),
-            model: Some("claude-opus-5".into()),
+            model: Some("anthropic/claude-opus-5".into()),
             status: Some(200),
             duration_ms: 12,
             request_bytes: 34,
@@ -107,7 +96,7 @@ pub(crate) mod tests {
         assert_eq!(
             lines,
             [
-                r#"{"requestId":"req_1","model":"claude-opus-5","status":200,"durationMs":12,"requestBytes":34,"responseBytes":56}"#,
+                r#"{"requestId":"req_1","model":"anthropic/claude-opus-5","status":200,"durationMs":12,"requestBytes":34,"responseBytes":56}"#,
                 r#"{"requestId":null,"model":null,"status":null,"durationMs":0,"requestBytes":0,"responseBytes":0}"#,
             ]
         );
@@ -115,19 +104,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn reads_the_model_from_a_json_body() {
+    fn shortens_untrusted_text() {
         assert_eq!(
-            UsageRecord::model_of(Some(r#"{"model":"claude-opus-5","messages":[]}"#)),
-            Some("claude-opus-5".into())
+            shorten("anthropic/claude-opus-5"),
+            "anthropic/claude-opus-5"
         );
-        assert_eq!(UsageRecord::model_of(Some(r#"{"messages":[]}"#)), None);
-        assert_eq!(UsageRecord::model_of(Some("not json")), None);
-        assert_eq!(UsageRecord::model_of(None), None);
-        let long = format!(r#"{{"model":"{}"}}"#, "m".repeat(500));
-        assert_eq!(
-            UsageRecord::model_of(Some(&long)).unwrap().len(),
-            MAX_FIELD_CHARS
-        );
+        assert_eq!(shorten(&"m".repeat(500)).len(), MAX_FIELD_CHARS);
     }
 
     #[test]

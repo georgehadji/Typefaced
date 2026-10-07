@@ -1,8 +1,8 @@
 // The two demo tools of Spike 4 (M0 Step 9.2): `get_font_summary` (read-only) and
 // `set_family_name` (changes the in-memory font, only after the user approves). Every
-// tool input is validated against its JSON Schema with Ajv before the tool runs: with
-// eager input streaming the API no longer validates it, and the SDK's tolerant parser
-// can hand over a truncated object.
+// tool input is validated against its JSON Schema with Ajv before the tool runs: the
+// model's input is untrusted (a fallback model may not be Anthropic's own endpoint), and
+// a turn cut off mid-input can hand over a truncated object.
 //
 // ponytail: Ajv compiles validators with `new Function`, which the app's CSP (no
 // 'unsafe-eval') blocks. That is fine for the dev-only `#/ai-spike` page (Tauri does
@@ -75,6 +75,9 @@ const RENAME_SCHEMA = {
       type: "string",
       minLength: 1,
       maxLength: MAX_FAMILY_NAME,
+      // No control or format characters (newlines, bidi overrides) in the approval
+      // dialog or the font. Ajv compiles patterns with the `u` flag.
+      pattern: "^\\P{C}+$",
       description: "The new family name, e.g. Test Sans",
     },
   },
@@ -133,8 +136,6 @@ export function fontTools(
       return `The family name is now ${to}.`;
     },
   });
-  return [summary, rename].map((tool) => ({
-    ...tool,
-    eager_input_streaming: true,
-  }));
+  // No `eager_input_streaming`: OpenRouter's Messages API reference does not list it.
+  return [summary, rename];
 }

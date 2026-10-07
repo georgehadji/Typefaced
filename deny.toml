@@ -119,7 +119,7 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     # A public-domain dedication with a fallback permissive grant (no conditions at all;
     # OSI-approved). Needed by fast-sha256 (npm, via standardwebhooks, a dependency of
-    # @anthropic-ai/sdk; M0 Step 9.2). Pending the user's confirmation (plan change log).
+    # @anthropic-ai/sdk; M0 Step 9.2). Allowed by the user on 2026-10-05 (Appendix B).
     "Unlicense",
 ]
 # The list is policy, shared with npm: entries no crate uses yet are expected.

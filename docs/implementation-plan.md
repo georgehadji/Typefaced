@@ -50,7 +50,7 @@ The AI agent runs in the webview on the **official Anthropic TypeScript SDK**. T
 | TTF / variable TTF | fontc 1.0, linked in-process |
 | CFF-based OTF | fontc TTF → "CFF transplant" using the in-house `tf-cff` writer |
 | UI | React + Zustand replica store + imperative Canvas2D engine + WASM geometry kernel |
-| AI | `@anthropic-ai/sdk` tool runner in TypeScript; Rust egress proxy + OS keychain; sandbox proposals; default model `claude-opus-5` |
+| AI | `@anthropic-ai/sdk` tool runner in TypeScript, against OpenRouter's Anthropic-compatible Messages API; Rust egress proxy + OS keychain; sandbox proposals; app-side model routes with OpenRouter fallbacks (ADR-0011) |
 | AI glyph generation | A parametric glyph engine (`tf-param`) driven by the AI, with visual self-critique |
 | Beginners (Studio) | Templates, "font from a description", handwriting import, auto-spacing, one-click export |
 | Professionals (Workbench) | Kerning groups, feature code, masters and variable fonts, imports from other editors |
@@ -134,7 +134,7 @@ flowchart TB
     end
   end
   HINT["ttfautohint<br/>sidecar"]
-  API["Claude API"]
+  API["OpenRouter<br/>Anthropic-compatible Messages API"]
   EXT["External agents<br/>Claude Desktop · Claude Code"]
   FS[("Files · OS keychain")]
   SHELL --> STORE
@@ -966,12 +966,12 @@ flowchart LR
     LEDGER["Budget ledger<br/>audit log"]
     ENG["Engine<br/>sandboxes"]
   end
-  API["Claude API"]
+  API["OpenRouter<br/>Anthropic-compatible Messages API"]
   UI <--> ORCH
   ORCH --> SDK
   SDK -- "request, no key" --> EGR
   EGR --> VAULT
-  EGR -- "x-api-key added" --> API
+  EGR -- "Bearer key added" --> API
   API -- "SSE stream" --> EGR
   EGR -- "IPC channel" --> SDK
   EGR --> LEDGER
@@ -987,8 +987,8 @@ flowchart LR
   - The SDK's HTTP transport is pointed at the Rust egress proxy through a custom `fetch`. The exact SDK option is confirmed in Spike 4; never guess SDK signatures (see §13.1).
 - **`tf-ai-host` (Rust):**
   - stores the key in the OS keychain;
-  - forwards only to allowlisted hosts (`api.anthropic.com`, and later the Typefaced gateway);
-  - injects `x-api-key`;
+  - forwards only to allowlisted destinations: `POST https://openrouter.ai/api/v1/messages` (user decision 2026-10-05: OpenRouter with the user's own OpenRouter key), and later the Typefaced gateway;
+  - injects `Authorization: Bearer <key>`;
   - streams server-sent events back over a Tauri channel;
   - records usage in the budget ledger;
   - writes the audit log;
@@ -1001,7 +1001,7 @@ flowchart LR
   - At the end, the UI requests `diff(sandbox)` and shows the **proposal**; accepting it merges as one undo step.
 
 **Patterns.**
-- **Ports & Adapters** — an `LlmClient` port: Anthropic direct (bring your own key) in 1.0; Typefaced Cloud gateway later, using the same SDK with a different `baseURL` and credential.
+- **Ports & Adapters** — an `LlmClient` port: OpenRouter's Anthropic-compatible Messages API with the user's own OpenRouter key in 1.0; Typefaced Cloud gateway later, using the same SDK with a different `baseURL` and credential.
 - **Registry** — tools come from `tf-commands`.
 - **Strategy + Template Method** — playbooks, each defined as {prompt template, allowed tools, effort, budget, success checks, UI surface}.
 - **State Machine** — conversation states: `Idle → Streaming → RunningTools → AwaitingApproval → Proposing → Done | Failed`.
@@ -1026,19 +1026,19 @@ Following the agent-design guidance in the Claude API reference, the agent gets 
 
 ### 6.4 Model and API configuration
 
-These choices follow the Claude API reference as of 2026-09-29. They live in a versioned config file (`assets/ai/config.toml`), not in code, and are re-verified with the `claude-api` skill before implementation.
+These choices follow the Claude API reference as of 2026-09-29, amended on 2026-10-05 for OpenRouter (user decision; ADR-0009 amendment, ADR-0011). Requests go to OpenRouter's Anthropic-compatible `POST /api/v1/messages`, so every setting is re-verified against OpenRouter's API reference (https://openrouter.ai/openapi.json) as well as the `claude-api` skill before implementation. In M0 the routes are a constant table in `packages/ai`; a versioned config file (`assets/ai/config.toml`) is a later option.
 
 | Setting | Value |
 |---|---|
-| Default model | **`claude-opus-5`** for every playbook |
+| Models | **App-side routes**, one per task, each a model plus up to 3 OpenRouter `fallbacks` (`[{model}]`, tried on failure or refusal). M0: `chat` → `anthropic/claude-sonnet-5.5` (fallbacks `anthropic/claude-sonnet-5`, `anthropic/claude-sonnet-4.6`); `agent` → `anthropic/claude-opus-5.5` (fallbacks `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5.5`). Claude models first, since tool use is most reliable on them. No auto router, no user picker (ADR-0011). |
 | Thinking | Adaptive (`thinking: {type: "adaptive"}`) |
-| Effort (`output_config.effort`) | `low` for metadata and quick answers; `high` by default; `xhigh` for long glyph-design runs. Tuned per playbook with evals. |
-| Streaming | Always for agent calls. Client tools set `eager_input_streaming: true`, so every tool input is validated before running. Always check `stop_reason` (`max_tokens`, `refusal`) before executing tools. |
-| Refusals | Server-side fallbacks (beta `server-side-fallback-2026-07-01`, `fallbacks: "default"`), plus a clear UI message when a request is declined |
+| Effort (`output_config.effort`) | Per route in M0: `chat` `low`, `agent` `medium`. From M3, per playbook: `low` for metadata and quick answers; `high` by default; `xhigh` for long glyph-design runs. Tuned per playbook with evals. |
+| Streaming | Always for agent calls. OpenRouter's streams may carry `: OPENROUTER PROCESSING` comments and end with `data: [DONE]`; the SDK's parser skips both. `eager_input_streaming` is not sent (OpenRouter's reference does not list it); every tool input is still validated before running. Always check `stop_reason` (`max_tokens`, `refusal`) before executing tools. |
+| Refusals | OpenRouter `fallbacks` (the route's fallback models; Anthropic's `fallbacks: "default"` and its beta are not used), plus a clear UI message when a request is declined |
 | Structured outputs | `output_config.format` for extraction tasks: style parameters from a brief, handwriting labels, metadata suggestions |
 | Strict tools | `strict: true` on tool schemas (they are generated strict-compatible) |
-| Prompt caching | Order: [tools, sorted] → [system prompt, versioned] → ● → [font-context digest] → ● → conversation (automatic caching for the tail). Mode or context changes go in as **mid-conversation system messages** (supported on Opus 5), so the cached prefix survives. A workspace switch that changes the tool set uses mid-conversation tool changes (beta `mid-conversation-tool-changes-2026-07-01`) for the same reason. Hit rate is tracked via `usage.cache_read_input_tokens`. |
-| Long sessions | Context editing clears old tool results, especially proof images. Compaction (beta) for very long chats. Task budgets (beta) pace long generation runs. |
+| Prompt caching | Order: [tools, sorted] → [system prompt, versioned] → ● → [font-context digest] → ● → conversation (automatic caching for the tail). Mode or context changes go in as **mid-conversation system messages** (supported on Opus 5), so the cached prefix survives. A workspace switch that changes the tool set could use mid-conversation tool changes for the same reason, but that is a beta; the egress proxy forwards no `anthropic-beta` header in M0, so any beta feature must first be verified on OpenRouter. Hit rate is tracked via `usage.cache_read_input_tokens`. |
+| Long sessions | Context editing clears old tool results, especially proof images. Compaction and task budgets would help long runs; both need verification on OpenRouter (and an allowlist change) first. |
 | Other models | A different model per route is a **product decision**, adopted only after the eval suite shows quality holds. Examples: `claude-fable-5-1` for the longest glyph-design runs; `claude-haiku-4-5` for per-cell handwriting labels. Newer models are also adopted only through the eval suite. |
 
 **Cost envelope** (estimates at list prices of $5 / $25 per million input / output tokens; to be measured in M3):
@@ -1301,12 +1301,12 @@ sequenceDiagram
   actor U as User
   participant A as AI orchestrator (TS)
   participant P as Egress proxy (Rust)
-  participant C as Claude API
+  participant C as OpenRouter (Messages API)
   participant E as Engine
   U->>A: "Add fi and fl ligatures"
   A->>E: fork(doc) → sandbox
-  A->>P: POST /v1/messages (stream, no key)
-  P->>C: request + x-api-key from OS keychain
+  A->>P: POST /api/v1/messages (stream, no key)
+  P->>C: request + Bearer key from OS keychain
   C-->>A: tool_use features.addRule(liga: f i → f_i, f l → f_l)
   A->>A: validate input against schema
   A->>E: execute(features.addRule, sandbox)
@@ -1610,7 +1610,7 @@ gantt
 | 008 | Boolean engine: skia-safe vs. linesweeper (from the spike) |
 | 009 | AI orchestration in TypeScript on the official SDK; Rust egress proxy + keychain |
 | 010 | AI edits as sandbox proposals with three-way merge |
-| 011 | Model configuration: `claude-opus-5` by default; config-driven; changes gated by evals |
+| 011 | Model configuration: app-side routes per task with OpenRouter fallbacks; changes gated by evals |
 | 012 | MCP server via `rmcp`; off by default; sandboxed writes |
 | 013 | UI stack: React + Zustand + imperative Canvas2D + WASM kernel |
 | 014 | Studio and Workbench as workspace profiles over one engine |
@@ -1730,7 +1730,7 @@ The ADRs themselves live in [docs/adr/](adr/README.md).
 
 | Category | Licenses | Condition |
 |---|---|---|
-| **Allowed** | MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, BSL-1.0, Unicode-3.0 / Unicode-DFS-2016, CC0-1.0 | Keep notices |
+| **Allowed** | MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, BSL-1.0, Unicode-3.0 / Unicode-DFS-2016, CC0-1.0, Unlicense | Keep notices |
 | **Allowed with conditions** | MPL-2.0 | Unmodified; file-level copyleft respected |
 | | FTL (FreeType License) | Credit in the documentation |
 | | OFL-1.1 | Fonts and assets only; license files kept |

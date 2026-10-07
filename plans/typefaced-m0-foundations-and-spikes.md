@@ -240,7 +240,7 @@ cargo test --workspace --locked
 git diff --exit-code packages/bindings                                                  # Step 2+
 pnpm lint && pnpm typecheck && pnpm test                                                # Step 2+
 cargo xtask check-deps && cargo deny check && cargo xtask licenses-npm && cargo xtask coverage   # Step 3.1+
-! git grep -nE 'sk-ant-[A-Za-z0-9_-]{16,}'                                              # no API keys committed
+! git grep -nE 'sk-(ant|or)-[A-Za-z0-9_-]{16,}'                                              # no API keys committed
 git status --porcelain                                                                  # empty: tests don't write into the repo
 ```
 
@@ -1047,7 +1047,7 @@ pnpm --filter @typefaced/desktop tauri dev --features bench     # open #/bench a
 - **How the key stays out:**
   1. The SDK's custom `fetch` forwards each request over Tauri IPC to Rust.
   2. Rust (`tf-ai-host`, layer `adapter`) checks the destination.
-  3. Rust injects `x-api-key` from Windows Credential Manager and makes the HTTPS call.
+  3. Rust injects the key from Windows Credential Manager (as built in 9.1: `x-api-key` for the Claude API; since 2026-10-05: `Authorization: Bearer` for OpenRouter) and makes the HTTPS call.
   4. Rust streams the response back over a Tauri `Channel`.
 - **Do not use `@tauri-apps/plugin-http`:** it would need the key in JavaScript.
 - **Scope.** This step builds and tests the Rust half. Step 9.2 builds the TypeScript client and runs the live test.
@@ -1057,13 +1057,13 @@ pnpm --filter @typefaced/desktop tauri dev --features bench     # open #/bench a
 1. **`crates/tf-ai-host`** (crate template; layer `adapter`).
    - **`CredentialVault`.**
      - Add the Windows store crate under `[target.'cfg(windows)'.dependencies]`, and set it as the default store at start-up.
-     - Production entry: service `com.typefaced.desktop`, account `anthropic-api-key`.
+     - Production entry: service `com.typefaced.desktop`, account `anthropic-api-key` (renamed to `openrouter-api-key` in Step 9.2 after the OpenRouter decision).
      - **Tests never touch the production entry.** They use service `com.typefaced.desktop.test`, an account with a random suffix, and delete it on teardown. The round-trip test (write, re-open, read) is `#[cfg(windows)]`; Linux CI has no secret service.
    - **`EgressPolicy`:**
-     - allow only `https://api.anthropic.com` with path prefix `/v1/`, and only the methods POST and GET;
+     - allow only `https://api.anthropic.com` with path prefix `/v1/`, and only the methods POST and GET (superseded in Step 9.2: only `POST https://openrouter.ai/api/v1/messages`);
      - strip any incoming `x-api-key`, `authorization` and `cookie` headers;
-     - pass through `anthropic-version`, `anthropic-beta`, `content-type` and `accept`;
-     - inject `x-api-key`;
+     - pass through `anthropic-version`, `anthropic-beta`, `content-type` and `accept` (superseded in Step 9.2: any `anthropic-beta` is refused);
+     - inject `x-api-key` (Step 9.2: `Authorization: Bearer <key>` for OpenRouter);
      - limit request bodies to 32 MB;
      - set connect and read timeouts;
      - never log headers or bodies.
@@ -1112,17 +1112,17 @@ cargo deny check
 | Effort | 1 d |
 | Installs | nothing (npm packages inside the project) |
 | Branch | `m0/09.2-ai-client` |
-| PR title | `feat(ai): Anthropic SDK client over the Rust egress proxy` |
+| PR title | `feat(ai): Anthropic SDK client over the Rust egress proxy via OpenRouter` |
 
 **Context brief.**
 - **The design.** `@anthropic-ai/sdk` runs in the webview with a custom `fetch` (`tauriFetch`) that calls Step 9.1's `ai_fetch` command.
-- **Request settings (plan §6.4):**
-  - model `claude-opus-5`;
-  - adaptive thinking;
+- **Provider (user decision 2026-10-05).** The SDK talks to OpenRouter's Anthropic-compatible Messages API (`baseURL` `https://openrouter.ai/api`) with the user's OpenRouter key; Step 9.1's `tf-ai-host` is changed in this step to match (destination, Bearer injection, keychain account).
+- **Request settings (plan §6.4, amended):**
+  - the model and up to 3 OpenRouter `fallbacks` from the app's route table (`chat`, `agent`; ADR-0011);
+  - adaptive thinking, effort per route;
   - streaming;
-  - `eager_input_streaming: true` on client tools, with every tool input validated against its schema (Ajv) before it runs;
-  - check the stop reason for `refusal` and `max_tokens` before running tools;
-  - `fallbacks: "default"` with its beta header.
+  - every tool input validated against its schema (Ajv) before it runs (`eager_input_streaming` is not sent: OpenRouter's reference does not list it);
+  - check the stop reason for `refusal` and `max_tokens` before running tools.
 - **Key entry (deviation 9).** The key is typed by the user once into a password field. It is sent to `ai_set_key`, the field is cleared, and the key is never stored, logged or readable back in JavaScript.
 
 **Mandatory reading before coding.**
@@ -1163,18 +1163,19 @@ cargo deny check
    4. The state changes, and a ledger entry exists.
 5. **Check the CSP in a debug build.** Tauri doesn't apply the CSP under `tauri dev`.
    - Run `pnpm --filter @typefaced/desktop tauri build --debug --no-bundle` and start the binary.
-   - In its devtools console, `fetch('https://api.anthropic.com/v1/models')` must be blocked.
+   - In its devtools console, `fetch('https://openrouter.ai/api/v1/models')` must be blocked.
    - The CSP is defence in depth. The real key control is the Rust proxy.
-6. **`anthropic-beta` and body-field allowlists in `tf-ai-host`.** Step 9.1 passes any `anthropic-beta` value through and checks only some body fields (`mcp_servers`, tool types, content sources). Allow only the beta values the client actually sends (e.g. the one `fallbacks: "default"` needs) and only the top-level body fields it sends (e.g. `model`, `messages`, `max_tokens`, `system`, `tools`, `tool_choice`, `thinking`, `stream`, `metadata`, `stop_sequences`, `temperature`, `fallbacks`, `output_config`); refuse anything else. Tests first. Note: Step 9.1's body check refuses any key named `source` whose value is not a string or an inline content source, so a tool schema property or tool input named `source` is refused (fails closed); avoid that name in tool schemas or skip those subtrees in the check, with a test.
+6. **`anthropic-beta` and body-field allowlists in `tf-ai-host`** (after the OpenRouter decision: no `anthropic-beta` at all, OpenRouter's request extensions refused, `fallbacks` only as `[{model}]` with at most 3, model IDs checked). Step 9.1 passes any `anthropic-beta` value through and checks only some body fields (`mcp_servers`, tool types, content sources). Allow only the top-level body fields the client sends (as built: `model`, `max_tokens`, `messages`, `system`, `tools`, `thinking`, `output_config`, `stream`, `fallbacks`); refuse anything else, and any `anthropic-beta` header. Tests first. Note: Step 9.1's body check refuses any key named `source` whose value is not a string or an inline content source, so a tool schema property or tool input named `source` is refused (fails closed); avoid that name in tool schemas or skip those subtrees in the check, with a test.
 7. Run the `ecc:security-reviewer` agent on the diff, and fix every CRITICAL and HIGH finding.
-8. Write `docs/spikes/spike-4-ai-egress.md`, covering Steps 9.1 and 9.2. Set ADR-009 to Accepted or Rejected, and record two accepted risks in it:
+8. Write `docs/spikes/spike-4-ai-egress.md`, covering Steps 9.1 and 9.2. Set ADR-009 to Accepted or Rejected, and record three accepted risks in it:
    - script in the webview can replace or delete the stored key through `ai_set_key` / `ai_delete_key` without confirmation; the M3 native credential prompt closes this;
-   - the system proxy is honoured, so a TLS-inspecting proxy that the OS trusts could see the key; kept so that corporate networks work.
+   - the system proxy is honoured, so a TLS-inspecting proxy that the OS trusts could see the key; kept so that corporate networks work;
+   - prompts, including font data, go to the upstream provider OpenRouter selects; the control is the OpenRouter account's privacy settings (added 2026-10-05).
 
 **Verification.**
 ```bash
 pnpm --filter @typefaced/ai test
-pnpm --filter @typefaced/desktop build && ! grep -rE 'sk-ant-[A-Za-z0-9_-]{16,}' apps/desktop/dist
+pnpm --filter @typefaced/desktop build && ! grep -rE 'sk-ant-[A-Za-z0-9_-]{16,}|sk-or-' apps/desktop/dist
 ```
 Manual checks: the live smoke test passes (GATE), and the debug-build CSP check passes.
 
@@ -1368,5 +1369,6 @@ grep -l '^Status: Proposed' docs/adr/0*.md        # only ADRs of spikes marked S
 | 2026-10-05 | Step 9.1 as built: reqwest 0.13 with `native-tls` enabled explicitly (its default is rustls + aws-lc-rs); the keychain store is passed to `CredentialVault` instead of `set_default_store`; a hand-written mock HTTP server instead of wiremock (it must pause mid-body); response chunks are UTF-8 text; every app command, not only `ai_*`, is restricted to the main window by an app ACL manifest | Facts found while building the step; the exit criteria are unchanged | — |
 | 2026-10-05 | Step 9.1 egress policy narrowed: only POST `/v1/messages` and `/v1/messages/count_tokens` and GET `/v1/models[/{id}]` (exact match) instead of the `/v1/` prefix; POST bodies with `mcp_servers` or server-tool `type`s are refused. `anthropic-beta` still passes through unchanged; Step 9.2 gains a task for the beta allowlist and records two accepted risks in ADR-0009 (key replace/delete from the webview; system proxy honoured) | Security review of PR #13: server-side tools could carry data out through Anthropic | User |
 | 2026-10-05 | Step 9.1 body check extended after the review of that change: content `source`s other than inline `base64`/`text`/`content` (e.g. image or document `url` sources, which the API fetches) and duplicate keys at any depth are refused; a POST is always sent as `application/json`; only known query parameters pass. Step 9.2's allowlist task also covers top-level body fields | Security review: URL content sources were a second way to make Anthropic fetch an attacker URL (HIGH) | — |
-| 2026-10-05 | Step 9.2 as built: model `claude-opus-5-5` instead of `claude-opus-5` (the `claude-api` skill's current default; effort set to `medium` explicitly); `fallbacks: "default"` uses beta `server-side-fallback-2026-07-01` and `eager_input_streaming: true` as the plan says (the skill confirms both; the skill's "leave it off behind a proxy" caveat does not apply because `tf-ai-host` forwards the body unchanged to the real API). The body-field allowlist holds only what the client sends (`model`, `max_tokens`, `messages`, `system`, `tools`, `thinking`, `output_config`, `stream`, `fallbacks`, the last only as `"default"`), not the plan's longer example list (`tool_choice`, `metadata`, `stop_sequences`, `temperature` are not sent; `temperature` is a 400 on this model). Tool schemas avoid the key `source` (a test checks it) instead of skipping subtrees in the body check. Ajv's compiled validators need `'unsafe-eval'`, which the CSP forbids; acceptable for the dev-only page, production needs precompiled validators (follow-up). ADR-0009 records the two accepted risks; it stays Proposed until the live smoke test and the debug-build CSP check | Facts found while building the step; the exit criteria are unchanged | User (allowlists and accepted risks) |
-| 2026-10-05 | Step 9.2 dependency licence: `@anthropic-ai/sdk` 0.131.0 pulls in `fast-sha256` 1.3.0 (via `standardwebhooks`), licensed `Unlicense` (a public-domain dedication with a permissive fallback, OSI-approved, no conditions). `Unlicense` was added to the shared allow-list in `deny.toml`, because `cargo xtask licenses-npm` has no per-package exceptions. Not on Appendix B before; pending the user's confirmation | Needed by the official SDK (ADR-0009); permissive | Pending (user) |
+| 2026-10-05 | Step 9.2 as built (model, fallbacks, beta and `eager_input_streaming` superseded by the OpenRouter row below): model `claude-opus-5-5` instead of `claude-opus-5` (the `claude-api` skill's current default; effort set to `medium` explicitly); `fallbacks: "default"` uses beta `server-side-fallback-2026-07-01` and `eager_input_streaming: true` as the plan says (the skill confirms both; the skill's "leave it off behind a proxy" caveat does not apply because `tf-ai-host` forwards the body unchanged to the real API). The body-field allowlist holds only what the client sends (`model`, `max_tokens`, `messages`, `system`, `tools`, `thinking`, `output_config`, `stream`, `fallbacks`, the last only as `"default"`), not the plan's longer example list (`tool_choice`, `metadata`, `stop_sequences`, `temperature` are not sent; `temperature` is a 400 on this model). Tool schemas avoid the key `source` (a test checks it) instead of skipping subtrees in the body check. Ajv's compiled validators need `'unsafe-eval'`, which the CSP forbids; acceptable for the dev-only page, production needs precompiled validators (follow-up). ADR-0009 records the two accepted risks; it stays Proposed until the live smoke test and the debug-build CSP check | Facts found while building the step; the exit criteria are unchanged | User (allowlists and accepted risks) |
+| 2026-10-05 | Step 9.2 dependency licence: `@anthropic-ai/sdk` 0.131.0 pulls in `fast-sha256` 1.3.0 (via `standardwebhooks`), licensed `Unlicense` (a public-domain dedication with a permissive fallback, OSI-approved, no conditions). `Unlicense` was added to the shared allow-list in `deny.toml`, because `cargo xtask licenses-npm` has no per-package exceptions. Added to Appendix B | Needed by the official SDK (ADR-0009); permissive | User (2026-10-05: allowed everywhere) |
+| 2026-10-05 | User decision 2026-10-05: OpenRouter + app-side routing. The client uses an OpenRouter API key through OpenRouter's Anthropic-compatible `POST /api/v1/messages` (`@anthropic-ai/sdk` kept, `baseURL` `https://openrouter.ai/api`). `tf-ai-host` (Step 9.1 code) changed in Step 9.2: only that endpoint on `https://openrouter.ai`, POST only, `Authorization: Bearer` injection, keychain account `openrouter-api-key`, no `anthropic-beta` header, OpenRouter extensions (`plugins`, `provider`, `models`, `route`, `session_id`, `trace`, `safeguards`, `metadata`, `user`) refused, `fallbacks` as `[{model}]` (at most 3), model IDs only `anthropic/<model>` without a `:variant` suffix (variants switch on OpenRouter features such as web search; no `openrouter/*` routers), a model required in every request, `max_tokens` at most 64000 and `thinking` only adaptive. Model routes per task in `packages/ai` (ADR-0011 amended). Dropped: Anthropic `fallbacks: "default"` and its beta, `eager_input_streaming`, `count_tokens`, `GET /models`. ADR-0009 amended (third accepted risk: prompts go to the upstream provider OpenRouter selects) | Provider choice; facts verified from OpenRouter's API reference (spike report) | User |

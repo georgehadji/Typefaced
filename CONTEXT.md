@@ -22,7 +22,7 @@ and WOFF2.
   `cargo xtask check-deps` enforces this.
 
 **Stage:** milestone M0 (foundations and technical spikes). The app shows its name and
-version over typed IPC, its shell exposes the AI egress commands, and `packages/ai` runs the Claude SDK over them (only a dev-only spike page uses it). The status of each step is in the table at the top of
+version over typed IPC, its shell exposes the AI egress commands, and `packages/ai` runs the Anthropic SDK over them, against OpenRouter (only a dev-only spike page uses it). The status of each step is in the table at the top of
 `plans/typefaced-m0-foundations-and-spikes.md`.
 
 ## Where to look for…
@@ -62,8 +62,8 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | `apps/desktop/src-tauri/icons/` | [CONTEXT.md](apps/desktop/src-tauri/icons/CONTEXT.md) | App icons for the bundle |
 | `apps/desktop/src-tauri/src/` | [CONTEXT.md](apps/desktop/src-tauri/src/CONTEXT.md) | Tauri entry point and IPC registration |
 | `crates/` | [CONTEXT.md](crates/CONTEXT.md) | Rust library crates of the engine |
-| `crates/tf-ai-host/` | [CONTEXT.md](crates/tf-ai-host/CONTEXT.md) | AI egress host crate (adapter layer): API key in the OS keychain, streaming proxy to the Claude API |
-| `crates/tf-ai-host/src/` | [CONTEXT.md](crates/tf-ai-host/src/CONTEXT.md) | Vault, egress policy, egress host, usage ledger |
+| `crates/tf-ai-host/` | [CONTEXT.md](crates/tf-ai-host/CONTEXT.md) | AI egress host crate (adapter layer): API key in the OS keychain, streaming proxy to OpenRouter's Messages API |
+| `crates/tf-ai-host/src/` | [CONTEXT.md](crates/tf-ai-host/src/CONTEXT.md) | Vault, egress policy, body check, egress host, usage ledger, test server |
 | `crates/tf-cff/` | [CONTEXT.md](crates/tf-cff/CONTEXT.md) | CFF writer crate (domain layer): cubic outlines to a `CFF ` table |
 | `crates/tf-cff/src/` | [CONTEXT.md](crates/tf-cff/src/CONTEXT.md) | Builder, charstring encoder, byte encodings |
 | `crates/tf-cff/tests/` | [CONTEXT.md](crates/tf-cff/tests/CONTEXT.md) | Tables built and read back with read-fonts and skrifa |
@@ -83,7 +83,7 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | `docs/adr/` | [CONTEXT.md](docs/adr/CONTEXT.md) | Architecture decision records |
 | `docs/spikes/` | [CONTEXT.md](docs/spikes/CONTEXT.md) | Spike reports |
 | `packages/` | [CONTEXT.md](packages/CONTEXT.md) | Shared TypeScript packages |
-| `packages/ai/` | [CONTEXT.md](packages/ai/CONTEXT.md) | Claude client of the webview (Anthropic SDK over the Rust egress proxy) |
+| `packages/ai/` | [CONTEXT.md](packages/ai/CONTEXT.md) | Claude client of the webview (Anthropic SDK, via OpenRouter, over the Rust egress proxy) |
 | `packages/ai/src/` | [CONTEXT.md](packages/ai/src/CONTEXT.md) | `tauriFetch`, client and agent loop, demo tools |
 | `packages/bindings/` | [CONTEXT.md](packages/bindings/CONTEXT.md) | Generated IPC bindings package |
 | `packages/bindings/src/` | [CONTEXT.md](packages/bindings/src/CONTEXT.md) | The generated `index.ts` |

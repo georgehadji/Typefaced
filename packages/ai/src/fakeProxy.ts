@@ -108,7 +108,7 @@ function messageStart(id: string) {
       id,
       type: "message",
       role: "assistant",
-      model: "claude-opus-5-5",
+      model: "anthropic/claude-opus-5.5",
       content: [],
       stop_reason: null,
       stop_sequence: null,
@@ -171,7 +171,15 @@ export function toolTurn(
   ]);
 }
 
-/** The scripted reply for a whole SSE body, sent as one chunk. */
+/**
+ * OpenRouter's keep-alive comment and end marker, which wrap its Messages API streams
+ * (https://openrouter.ai/docs/api/reference/streaming).
+ */
+export const OPENROUTER_KEEPALIVE = ": OPENROUTER PROCESSING\n\n";
+export const OPENROUTER_DONE = "data: [DONE]\n\n";
+
+/** The scripted reply for a whole SSE body as OpenRouter sends it, in one chunk. */
 export function streamed(body: string): ReplyStep[] {
-  return [sseHead, { kind: "chunk", text: body }, { kind: "end" }];
+  const text = `${OPENROUTER_KEEPALIVE}${body}${OPENROUTER_DONE}`;
+  return [sseHead, { kind: "chunk", text }, { kind: "end" }];
 }

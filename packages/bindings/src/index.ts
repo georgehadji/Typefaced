@@ -6,14 +6,14 @@ import { invoke as __TAURI_INVOKE, Channel } from "@tauri-apps/api/core";
 export const commands = {
 	/**  Returns the product name and version configured in `tauri.conf.json`. */
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
-	/**  Stores the Claude API key in the OS keychain, replacing any earlier key. */
+	/**  Stores the OpenRouter API key in the OS keychain, replacing any earlier key. */
 	aiSetKey: (key: string) => typedError<null, string>(__TAURI_INVOKE("ai_set_key", { key })),
-	/**  Whether a Claude API key is stored. */
+	/**  Whether an OpenRouter API key is stored. */
 	aiHasKey: () => typedError<boolean, string>(__TAURI_INVOKE("ai_has_key")),
-	/**  Deletes the stored Claude API key, if any. */
+	/**  Deletes the stored OpenRouter API key, if any. */
 	aiDeleteKey: () => typedError<null, string>(__TAURI_INVOKE("ai_delete_key")),
 	/**
-	 *  Forwards one request to the Claude API with the stored key. `on_event` receives the
+	 *  Forwards one request to OpenRouter with the stored key. `on_event` receives the
 	 *  response head first, then the body chunks, then an end, error or aborted marker. The
 	 *  command itself resolves when the response is over. Failures travel on the channel; the
 	 *  `Result` is there because Tauri requires it for async commands that borrow `State`.
@@ -58,13 +58,13 @@ export type ProxyEvent =
 export type ProxyRequest = {
 	/**  Chosen by the caller (e.g. a UUID); `ai_abort` cancels the request by this ID. */
 	requestId: string,
-	/**  `GET` or `POST`. */
+	/**  `POST`; any other method is refused. */
 	method: string,
-	/**  Absolute URL, e.g. `https://api.anthropic.com/v1/messages`. */
+	/**  Absolute URL, e.g. `https://openrouter.ai/api/v1/messages`. */
 	url: string,
 	/**  Header name and value pairs. */
 	headers: ([string, string])[],
-	/**  UTF-8 body, if any (the Claude API takes JSON). */
+	/**  UTF-8 body, if any (the Messages API takes JSON). */
 	body: string | null,
 };
 

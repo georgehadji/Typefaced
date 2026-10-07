@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createFakeProxy,
+  OPENROUTER_DONE,
+  OPENROUTER_KEEPALIVE,
   sseHead,
   streamed,
   textTurn,
@@ -20,8 +22,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@typefaced/bindings", () => ({ commands: ipc }));
 
-const { createClaudeClient, FALLBACK_BETA, MODEL, runAgent, KEY_PLACEHOLDER } =
-  await import("./agent");
+const { createClaudeClient, ROUTES, runAgent, KEY_PLACEHOLDER } = await import(
+  "./agent"
+);
 const { createFontStore, FIXTURE_FONT, fontTools } = await import(
   "./fontTools"
 );
@@ -46,8 +49,9 @@ const RUST_BODY_FIELDS = [
   "stream",
   "fallbacks",
 ];
-/** `anthropic-beta` values tf-ai-host lets through (crates/tf-ai-host/src/policy.rs). */
-const RUST_BETAS = ["server-side-fallback-2026-07-01"];
+/** A model ID tf-ai-host lets through (`model_allowed` in body.rs). */
+const RUST_MODEL_ID = /^anthropic\/[a-z0-9][a-z0-9._-]*$/;
+const RUST_MAX_FALLBACKS = 3;
 
 function setup(approve = vi.fn().mockResolvedValue(true)) {
   const store = createFontStore(FIXTURE_FONT);
@@ -69,16 +73,20 @@ function header(call: number, name: string) {
   return proxy.calls[call].request.headers.find(([n]) => n === name)?.[1];
 }
 
-/** Request `call` carries only body fields and betas that tf-ai-host lets through. */
+/** Request `call` carries only what tf-ai-host lets through. */
 function expectAllowedByRust(call: number) {
-  expect(
-    Object.keys(body(call)).every((k) => RUST_BODY_FIELDS.includes(k)),
-  ).toBe(true);
-  expect(
-    (header(call, "anthropic-beta") ?? "")
-      .split(",")
-      .every((b) => RUST_BETAS.includes(b)),
-  ).toBe(true);
+  const sent = body(call);
+  expect(Object.keys(sent).every((k) => RUST_BODY_FIELDS.includes(k))).toBe(
+    true,
+  );
+  expect(sent.model).toMatch(RUST_MODEL_ID);
+  expect(sent.fallbacks.length).toBeLessThanOrEqual(RUST_MAX_FALLBACKS);
+  for (const fallback of sent.fallbacks) {
+    expect(Object.keys(fallback)).toEqual(["model"]);
+    expect(fallback.model).toMatch(RUST_MODEL_ID);
+  }
+  // tf-ai-host refuses every anthropic-beta header.
+  expect(header(call, "anthropic-beta")).toBeUndefined();
 }
 
 /** The tool_result blocks of the last user message of request `call`. */
@@ -98,22 +106,68 @@ describe("runAgent", () => {
     expect(onText).toHaveBeenCalledWith("Hello");
     const request = proxy.calls[0].request;
     expect(request.method).toBe("POST");
-    expect(request.url).toBe("https://api.anthropic.com/v1/messages?beta=true");
+    expect(request.url).toBe("https://openrouter.ai/api/v1/messages?beta=true");
     const sent = body(0);
     expect(sent).toMatchObject({
-      model: MODEL,
+      model: "anthropic/claude-opus-5.5",
       stream: true,
       thinking: { type: "adaptive" },
-      fallbacks: "default",
+      output_config: { effort: "medium" },
+      fallbacks: [
+        { model: "anthropic/claude-opus-5" },
+        { model: "anthropic/claude-sonnet-5.5" },
+      ],
       messages: [{ role: "user", content: "Hi" }],
     });
-    expect(header(0, "anthropic-beta")).toBe(FALLBACK_BETA);
     expectAllowedByRust(0);
     // Only a placeholder leaves the webview; Rust drops it and adds the real key.
     expect(header(0, "x-api-key")).toBe(KEY_PLACEHOLDER);
+    expect(header(0, "authorization")).toBeUndefined();
     for (const tool of sent.tools) {
-      expect(tool.eager_input_streaming).toBe(true);
+      expect(tool).not.toHaveProperty("eager_input_streaming");
     }
+  });
+
+  it("routes each task to its model and fallbacks", async () => {
+    proxy.reply(...streamed(textTurn("Hi")));
+    await runAgent(createClaudeClient(), "Hi", {
+      task: "chat",
+      tools: [],
+      onText: () => {},
+    });
+    expect(body(0)).toMatchObject({
+      model: ROUTES.chat.model,
+      fallbacks: ROUTES.chat.fallbacks.map((model) => ({ model })),
+      output_config: { effort: ROUTES.chat.effort },
+    });
+    expectAllowedByRust(0);
+    for (const route of Object.values(ROUTES)) {
+      // Claude models first: tool use is most reliable on them.
+      expect(route.model).toMatch(/^anthropic\//);
+      expect(route.fallbacks).not.toContain(route.model);
+    }
+  });
+
+  it("reads OpenRouter's stream with keep-alive comments and [DONE]", async () => {
+    const [first, ...rest] = textTurn("Hello").split("\n\n");
+    // Comments between and inside network chunks, and the end marker on its own.
+    const body = [
+      OPENROUTER_KEEPALIVE,
+      `${first}\n\n`,
+      ": OPENROUTER",
+      " PROCESSING\n\n",
+      rest.join("\n\n"),
+      OPENROUTER_DONE,
+    ];
+    proxy.reply(
+      sseHead,
+      ...body.map((text) => ({ kind: "chunk" as const, text })),
+      { kind: "end" },
+    );
+    const { run, onText } = setup();
+
+    expect(await run("Hi")).toEqual({ kind: "done", text: "Hello" });
+    expect(onText).toHaveBeenCalledWith("Hello");
   });
 
   it("runs a tool call and sends its result back", async () => {
@@ -227,16 +281,20 @@ describe("runAgent", () => {
     },
   );
 
-  it("reports the iteration limit when the model still wants tools", async () => {
+  it("reports the iteration limit without running the last turn's tools", async () => {
     for (let i = 0; i < 8; i += 1) {
       proxy.reply(
-        ...streamed(toolTurn(`toolu_l${i}`, "get_font_summary", "{}")),
+        ...streamed(
+          toolTurn(`toolu_l${i}`, "set_family_name", '{"family_name":"Loop"}'),
+        ),
       );
     }
-    const { run } = setup();
+    const { run, approve } = setup();
 
     expect(await run("Loop")).toEqual({ kind: "iteration_limit" });
     expect(proxy.calls).toHaveLength(8);
+    // The 8th turn's change would never reach the model, so it is not asked for.
+    expect(approve).toHaveBeenCalledTimes(7);
   });
 
   it("aborts the request in Rust when the signal fires", async () => {

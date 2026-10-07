@@ -16,7 +16,7 @@ In the ADRs, a bare § refers to the [implementation plan](../implementation-pla
 | 0008 | Boolean engine: skia-safe vs. linesweeper (from the spike) | [0008-boolean-engine.md](0008-boolean-engine.md) |
 | 0009 | AI orchestration in TypeScript on the official SDK; Rust egress proxy + keychain | [0009-ai-orchestration-typescript-sdk-rust-egress.md](0009-ai-orchestration-typescript-sdk-rust-egress.md) |
 | 0010 | AI edits as sandbox proposals with three-way merge | [0010-ai-edits-as-sandbox-proposals.md](0010-ai-edits-as-sandbox-proposals.md) |
-| 0011 | Model configuration: `claude-opus-5` by default; config-driven; changes gated by evals | [0011-model-configuration.md](0011-model-configuration.md) |
+| 0011 | Model configuration: app-side routes per task (OpenRouter); changes gated by evals | [0011-model-configuration.md](0011-model-configuration.md) |
 | 0012 | MCP server via `rmcp`; off by default; sandboxed writes | [0012-mcp-server-rmcp.md](0012-mcp-server-rmcp.md) |
 | 0013 | UI stack: React + Zustand + imperative Canvas2D + WASM kernel | [0013-ui-stack-react-zustand-canvas2d-wasm.md](0013-ui-stack-react-zustand-canvas2d-wasm.md) |
 | 0014 | Studio and Workbench as workspace profiles over one engine | [0014-studio-and-workbench-workspace-profiles.md](0014-studio-and-workbench-workspace-profiles.md) |

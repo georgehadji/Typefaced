@@ -23,7 +23,7 @@ beforeEach(() => {
   ipc.aiAbort.mockReset().mockImplementation(proxy.aiAbort);
 });
 
-const URL_MESSAGES = "https://api.anthropic.com/v1/messages?beta=true";
+const URL_MESSAGES = "https://openrouter.ai/api/v1/messages?beta=true";
 
 function bodyOf(response: Response): ReadableStream<Uint8Array> {
   if (response.body === null) throw new Error("no body");
@@ -36,7 +36,10 @@ describe("tauriFetch", () => {
 
     await tauriFetch(URL_MESSAGES, {
       method: "POST",
-      headers: { "content-type": "application/json", "anthropic-beta": "b" },
+      headers: {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+      },
       body: '{"model":"m"}',
     });
 
@@ -49,7 +52,7 @@ describe("tauriFetch", () => {
     expect(first.request.headers).toEqual(
       expect.arrayContaining([
         ["content-type", "application/json"],
-        ["anthropic-beta", "b"],
+        ["anthropic-version", "2023-06-01"],
       ]),
     );
     expect(first.request.requestId).toMatch(/^[A-Za-z0-9_-]{1,64}$/);

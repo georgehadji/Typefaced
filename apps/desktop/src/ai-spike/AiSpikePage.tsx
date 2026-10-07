@@ -41,12 +41,12 @@ function describeOutcome(outcome: AgentOutcome): string {
     case "truncated":
       return `A tool call was cut off (stop reason: ${outcome.stopReason}); it was not run.`;
     case "iteration_limit":
-      return "Stopped at the tool-call limit; the last tool results were not sent.";
+      return "Stopped at the tool-call limit; the last tool calls were not run.";
   }
 }
 
 /**
- * Dev-only page for Spike 4 (M0 Step 9.2): store the Claude API key, then run a prompt
+ * Dev-only page for Spike 4 (M0 Step 9.2): store the OpenRouter API key, then run a prompt
  * through the SDK, the Rust egress proxy and the two demo tools.
  */
 export default function AiSpikePage() {
@@ -155,7 +155,7 @@ export default function AiSpikePage() {
       <h1>AI spike</h1>
       <form onSubmit={storeKey}>
         <label>
-          Claude API key{" "}
+          OpenRouter API key{" "}
           <input ref={keyField} type="password" autoComplete="off" />
         </label>{" "}
         <button type="submit">Store key</button>{" "}

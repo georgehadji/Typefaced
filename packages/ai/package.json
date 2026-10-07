@@ -2,7 +2,7 @@
   "name": "@typefaced/ai",
   "version": "0.1.0",
   "private": true,
-  "description": "Claude API client for the webview: the Anthropic SDK over the Rust egress proxy (ADR-0009)",
+  "description": "Claude client for the webview: the Anthropic SDK against OpenRouter, over the Rust egress proxy (ADR-0009)",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

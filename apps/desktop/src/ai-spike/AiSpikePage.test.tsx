@@ -64,7 +64,9 @@ describe("AiSpikePage", () => {
   it("sends the key to Rust once and clears the field", async () => {
     render(<AiSpikePage />);
     await screen.findByText("Key stored: no");
-    const field = screen.getByLabelText("Claude API key") as HTMLInputElement;
+    const field = screen.getByLabelText(
+      "OpenRouter API key",
+    ) as HTMLInputElement;
     expect(field.type).toBe("password");
     vi.mocked(commands.aiHasKey).mockResolvedValue(ok(true));
 
@@ -87,7 +89,7 @@ describe("AiSpikePage", () => {
       status: "error",
       error: "the key must be 1 to 512 visible ASCII characters",
     });
-    fireEvent.change(screen.getByLabelText("Claude API key"), {
+    fireEvent.change(screen.getByLabelText("OpenRouter API key"), {
       target: { value: "bad key" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Store key" }));
@@ -149,13 +151,13 @@ describe("AiSpikePage", () => {
   it("shows why a request failed, including the proxy's reason", async () => {
     agent.runAgent.mockRejectedValueOnce(
       Object.assign(new Error("Connection error."), {
-        cause: new TypeError("an anthropic-beta value is not allowed"),
+        cause: new TypeError("anthropic-beta headers are not forwarded"),
       }),
     );
     render(<AiSpikePage />);
     runPrompt();
     await screen.findByText(
-      "Failed: Connection error. (an anthropic-beta value is not allowed)",
+      "Failed: Connection error. (anthropic-beta headers are not forwarded)",
     );
   });
 

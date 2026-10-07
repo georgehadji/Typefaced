@@ -1,7 +1,8 @@
 # packages/ai/
 
 Package `@typefaced/ai`: the Claude client of the webview (ADR-0009). It runs the
-official Anthropic SDK with a custom `fetch` that sends every request to the Rust egress
+official Anthropic SDK against OpenRouter's Anthropic-compatible Messages API, with a
+custom `fetch` that sends every request to the Rust egress
 proxy (`ai_fetch` in `crates/tf-ai-host`), which adds the API key. The webview never
 holds the key. The package exports `src/index.ts` directly (no build step). Up:
 [packages/CONTEXT.md](../CONTEXT.md).

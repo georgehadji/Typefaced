@@ -9,16 +9,16 @@ function setup(approve = vi.fn().mockResolvedValue(true)) {
 }
 
 describe("fontTools", () => {
-  it("defines two client tools with eager input streaming and closed schemas", () => {
+  it("defines two client tools with closed schemas", () => {
     const { summary, rename } = setup();
     expect(summary.name).toBe("get_font_summary");
     expect(rename.name).toBe("set_family_name");
     for (const tool of [summary, rename]) {
       expect(tool).toMatchObject({
         type: "custom",
-        eager_input_streaming: true,
         input_schema: { type: "object", additionalProperties: false },
       });
+      expect(tool).not.toHaveProperty("eager_input_streaming");
       // The egress policy refuses any key named `source` (tf-ai-host body check).
       expect(JSON.stringify(tool)).not.toContain('"source"');
     }
@@ -37,6 +37,9 @@ describe("fontTools", () => {
       { family_name: "" },
       { family_name: "x".repeat(64) },
       { family_name: "Ok", extra: true },
+      // Control and format characters (a newline, a right-to-left override).
+      { family_name: `Test${String.fromCharCode(0x0a)}Sans` },
+      { family_name: `Test${String.fromCharCode(0x202e)}Sans` },
       "not an object",
     ]) {
       const result = rename.run(input as never);

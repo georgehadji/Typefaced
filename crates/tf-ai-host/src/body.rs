@@ -1,8 +1,9 @@
 //! Checks a POST body before it is forwarded: one JSON object, no duplicate keys, only
-//! the top-level fields the webview client sends, no server-side tools or MCP servers,
-//! and no content `source` the API would fetch from elsewhere (only inline `base64`,
-//! `text` and `content` sources). The tests are in `policy.rs`, through
-//! `EgressPolicy::prepare`.
+//! the top-level fields the webview client sends, an `anthropic/<model>` ID and at most three
+//! fallback models in OpenRouter's shape, the client's `max_tokens` and `thinking` limits,
+//! no server-side tools or MCP servers, and no
+//! content `source` the API would fetch from elsewhere (only inline `base64`, `text` and
+//! `content` sources). The tests are in `policy.rs`, through `EgressPolicy::prepare`.
 
 use std::collections::HashSet;
 
@@ -26,10 +27,24 @@ const UNKNOWN_FIELD: &str = "unknown field";
 /// Longest string kept by the walk; every `type` value is far shorter.
 const MAX_TYPE_BYTES: usize = 64;
 
+/// Most fallback models OpenRouter takes on `/api/v1/messages`.
+const MAX_FALLBACKS: usize = 3;
+
+/// Longest model ID accepted; real ones are about 40 bytes.
+const MAX_MODEL_BYTES: usize = 100;
+
+/// The only model vendor the client routes to (`packages/ai` `ROUTES`): Claude models.
+/// Any other vendor, and OpenRouter's own routers, are refused (cost and data control).
+const ALLOWED_VENDOR: &str = "anthropic";
+
+/// The client's `max_tokens`; a larger value could only raise the cost.
+const MAX_OUTPUT_TOKENS: u32 = 64_000;
+
 /// Refuses bodies that ask for server-side tools, MCP servers or content the API would
-/// fetch from elsewhere, bodies with a top-level field the client does not send, and
-/// bodies that are not one JSON object without duplicate keys.
-pub(crate) fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
+/// fetch from elsewhere, bodies with a top-level field the client does not send, bodies
+/// without an allowed model, and bodies that are not one JSON object without duplicate
+/// keys. Returns the requested model, for the usage ledger.
+pub(crate) fn check_body(body: Option<&str>) -> Result<String, PolicyError> {
     let body = body.ok_or(PolicyError::BadBody)?;
     // serde would also read a JSON array into a struct, by position.
     if !body.trim_start().starts_with('{') {
@@ -38,7 +53,7 @@ pub(crate) fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
     if let Err(error) = serde_json::from_str::<Walk>(body) {
         let fetched = error.to_string().starts_with(FETCHED_SOURCE);
         return Err(if fetched {
-            PolicyError::ServerTools
+            PolicyError::FetchedSource
         } else {
             PolicyError::BadBody
         });
@@ -50,14 +65,22 @@ pub(crate) fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
             PolicyError::BadBody
         }
     })?;
-    // The client sends only the server-chosen fallback; a fallback list could carry
-    // per-model overrides that this check does not look into.
-    if fields
-        .fallbacks
+    let model = fields
+        .model
         .0
-        .is_some_and(|value| value.as_str() != Some("default"))
-    {
-        return Err(PolicyError::BodyField);
+        .filter(|m| model_allowed(m))
+        .ok_or(PolicyError::Model)?;
+    let fallbacks = fields.fallbacks.0.unwrap_or_default();
+    if fallbacks.len() > MAX_FALLBACKS || !fallbacks.iter().all(|f| model_allowed(&f.model)) {
+        return Err(PolicyError::Model);
+    }
+    // The client sends adaptive thinking only; a fixed budget could raise the cost.
+    let thinking_allowed = fields
+        .thinking
+        .0
+        .is_none_or(|t| t == serde_json::json!({ "type": "adaptive" }));
+    if fields.max_tokens.0.is_some_and(|m| m > MAX_OUTPUT_TOKENS) || !thinking_allowed {
+        return Err(PolicyError::Setting);
     }
     let server_tool = fields
         .tools
@@ -70,7 +93,25 @@ pub(crate) fn check_body(body: Option<&str>) -> Result<(), PolicyError> {
     if fields.mcp_servers.0.is_some() || server_tool {
         return Err(PolicyError::ServerTools);
     }
-    Ok(())
+    Ok(model)
+}
+
+/// One OpenRouter model ID `anthropic/<model>`, the model part in lower case. No
+/// `:variant` suffix: variants switch on OpenRouter features the policy refuses
+/// elsewhere (`:online` is the web plugin; `:nitro`, `:floor` and `:free` pick
+/// providers). Other vendors and OpenRouter's routers (`openrouter/...`) are refused.
+fn model_allowed(id: &str) -> bool {
+    id.len() <= MAX_MODEL_BYTES
+        && id.split_once('/').is_some_and(|(vendor, model)| {
+            vendor == ALLOWED_VENDOR
+                && model
+                    .bytes()
+                    .next()
+                    .is_some_and(|b| b.is_ascii_alphanumeric())
+                && model
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+        })
 }
 
 /// A walk over any JSON value. It refuses duplicate keys in every object (the API might
@@ -165,7 +206,9 @@ impl<'de> Visitor<'de> for WalkVisitor {
 
 /// The top-level fields of a messages body. Only the fields the webview client sends
 /// (`packages/ai`) are allowed; any other is refused (`deny_unknown_fields`).
-/// `mcp_servers` is listed only to be refused as a server feature. Field matching sees
+/// `mcp_servers` is listed only to be refused as a server feature; OpenRouter's own
+/// extensions (`plugins`, `provider`, `models`, `route`, …) are not listed, so they are
+/// refused like any other unknown field. Field matching sees
 /// JSON escapes decoded, and a duplicate field is an error, so the API cannot read a
 /// different copy than this check did.
 #[derive(Deserialize)]
@@ -177,22 +220,29 @@ struct BodyFields {
     #[serde(default)]
     tools: Option<Vec<ToolFields>>,
     #[serde(default)]
-    model: Present,
+    model: Present<String>,
     #[serde(default)]
-    max_tokens: Present,
+    max_tokens: Present<u32>,
     #[serde(default)]
     messages: Present,
     #[serde(default)]
     system: Present,
     #[serde(default)]
-    thinking: Present,
+    thinking: Present<serde_json::Value>,
     #[serde(default)]
     output_config: Present,
     #[serde(default)]
     stream: Present,
-    /// Only `"default"` passes (checked in `check_body`).
+    /// OpenRouter's fallback list (checked in `check_body`).
     #[serde(default)]
-    fallbacks: Present<serde_json::Value>,
+    fallbacks: Present<Vec<Fallback>>,
+}
+
+/// One OpenRouter fallback. Only `model`: per-attempt overrides could change the tools.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Fallback {
+    model: String,
 }
 
 #[derive(Deserialize)]

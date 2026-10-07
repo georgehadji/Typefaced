@@ -1,18 +1,46 @@
-// The Claude client for the webview and the Spike 4 agent loop. The client's `fetch` is
-// `tauriFetch`, so every request goes through the Rust egress proxy, which drops the
-// placeholder key and adds the real one (ADR-0009). The loop is the SDK's beta tool
-// runner, streamed, with the request settings of implementation plan §6.4.
+// The Claude client for the webview and the Spike 4 agent loop. The client talks to
+// OpenRouter's Anthropic-compatible Messages API; its `fetch` is `tauriFetch`, so every
+// request goes through the Rust egress proxy, which drops the placeholder key and adds
+// the real one as a bearer token (ADR-0009). The loop is the SDK's beta tool runner,
+// streamed, with the request settings of implementation plan §6.4 and the model routes
+// of ADR-0011.
 import Anthropic from "@anthropic-ai/sdk";
 import type { BetaRunnableTool } from "@anthropic-ai/sdk/lib/tools/BetaRunnableTool";
 import { tauriFetch } from "./tauriFetch";
 
-/** The default model of the `claude-api` skill (the plan said `claude-opus-5`). */
-export const MODEL = "claude-opus-5-5";
-/** Beta header for `fallbacks: "default"`; tf-ai-host allows this value only. */
-export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+/** OpenRouter's Anthropic-compatible API; the SDK appends `/v1/messages`. */
+export const OPENROUTER_BASE_URL = "https://openrouter.ai/api";
+
+export type Task = "chat" | "agent";
+
+export interface Route {
+  /** OpenRouter model ID `anthropic/<model>`, no `:variant` (Rust refuses others). */
+  model: string;
+  /** Tried in order if the model fails or refuses; OpenRouter takes at most 3. */
+  fallbacks: string[];
+  effort: "low" | "medium" | "high";
+}
+
+/**
+ * The app picks the model per task; OpenRouter's `fallbacks` cover outages, rate limits
+ * and refusals. IDs are from OpenRouter's public model list (2026-10-05).
+ */
+export const ROUTES: Readonly<Record<Task, Route>> = {
+  chat: {
+    model: "anthropic/claude-sonnet-5.5",
+    fallbacks: ["anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.6"],
+    effort: "low",
+  },
+  agent: {
+    model: "anthropic/claude-opus-5.5",
+    fallbacks: ["anthropic/claude-opus-5", "anthropic/claude-sonnet-5.5"],
+    effort: "medium",
+  },
+};
 /**
  * Sent as `x-api-key` by the SDK, which requires some key. The Rust proxy drops every
- * incoming `x-api-key` and adds the stored one. Must never look like a real key.
+ * incoming `x-api-key` and `authorization` and adds the stored key as a bearer token.
+ * Must never look like a real key.
  */
 export const KEY_PLACEHOLDER = "injected-by-rust";
 
@@ -27,7 +55,10 @@ const SYSTEM_PROMPT =
 export function createClaudeClient(): Anthropic {
   return new Anthropic({
     apiKey: KEY_PLACEHOLDER,
+    baseURL: OPENROUTER_BASE_URL,
     fetch: tauriFetch,
+    // Never pick up ANTHROPIC_AUTH_TOKEN from the environment (tests, Node tools).
+    authToken: null,
     // The SDK refuses to run in a browser by default because the key would be exposed;
     // here the webview holds only the placeholder.
     dangerouslyAllowBrowser: true,
@@ -47,6 +78,8 @@ export type AgentOutcome =
   | { kind: "iteration_limit" };
 
 export interface AgentOptions {
+  /** Picks the model route; the agent loop defaults to `agent`. */
+  task?: Task;
   tools: BetaRunnableTool[];
   /** Receives the answer text as it streams. */
   onText: (delta: string) => void;
@@ -57,17 +90,17 @@ export interface AgentOptions {
 export async function runAgent(
   client: Anthropic,
   prompt: string,
-  { tools, onText, signal }: AgentOptions,
+  { task = "agent", tools, onText, signal }: AgentOptions,
 ): Promise<AgentOutcome> {
+  const route = ROUTES[task];
   const runner = client.beta.messages.toolRunner(
     {
-      model: MODEL,
+      model: route.model,
       max_tokens: MAX_TOKENS,
       thinking: { type: "adaptive" },
-      // Claude Opus 5.5 defaults to `medium`; set it explicitly.
-      output_config: { effort: "medium" },
-      fallbacks: "default",
-      betas: [FALLBACK_BETA],
+      output_config: { effort: route.effort },
+      // OpenRouter's shape (each entry only `model`), not Anthropic's `"default"`.
+      fallbacks: route.fallbacks.map((model) => ({ model })),
       system: SYSTEM_PROMPT,
       tools,
       messages: [{ role: "user", content: prompt }],
@@ -79,8 +112,9 @@ export async function runAgent(
     { signal },
   );
   let text = "";
-  let wantsTools = false;
+  let turn = 0;
   for await (const stream of runner) {
+    turn += 1;
     stream.on("text", (delta) => onText(delta));
     const message = await stream.finalMessage();
     // Checked before the runner would run this turn's tools: a refusal can cut a
@@ -95,12 +129,14 @@ export async function runAgent(
     if (hasToolUse && message.stop_reason !== "tool_use") {
       return { kind: "truncated", stopReason: message.stop_reason };
     }
-    wantsTools = hasToolUse;
+    // The runner would run the last allowed turn's tools but never send their results;
+    // returning here stops it before an approved change happens outside the dialogue.
+    if (hasToolUse && turn === MAX_ITERATIONS) {
+      return { kind: "iteration_limit" };
+    }
     text = message.content
       .flatMap((block) => (block.type === "text" ? [block.text] : []))
       .join("");
   }
-  // After the last allowed turn the runner runs its tools but sends no results.
-  if (wantsTools) return { kind: "iteration_limit" };
   return { kind: "done", text };
 }

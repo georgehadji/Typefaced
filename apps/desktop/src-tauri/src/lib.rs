@@ -142,7 +142,7 @@ mod tests {
         )
         .unwrap();
         let ledger = UsageLedger::new(std::env::temp_dir().join("typefaced-acl-test.jsonl"));
-        let host = EgressHost::new(EgressPolicy::anthropic(), vault, ledger).unwrap();
+        let host = EgressHost::new(EgressPolicy::openrouter(), vault, ledger).unwrap();
         // `app_info` takes a Wry `AppHandle`, so the mock app registers only the `ai_*`
         // commands; the ACL check runs before dispatch, so `app_info` is still checked.
         let app = mock_builder()
