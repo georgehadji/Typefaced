@@ -2,7 +2,7 @@
 
 Tests [ADR-0009](../adr/0009-ai-orchestration-typescript-sdk-rust-egress.md) (with its 2026-10-05 OpenRouter amendment) and the routes of [ADR-0011](../adr/0011-model-configuration.md). Plan: [M0 Steps 9.1 and 9.2](../../plans/typefaced-m0-foundations-and-spikes.md). Code: [`crates/tf-ai-host`](../../crates/tf-ai-host/), [`apps/desktop/src-tauri/src/ai.rs`](../../apps/desktop/src-tauri/src/ai.rs), [`packages/ai`](../../packages/ai/), [`apps/desktop/src/ai-spike/`](../../apps/desktop/src/ai-spike/).
 
-**Verdict in one line.** Pending the two manual checks. Without network access everything ADR-0009 needs works: the official TypeScript SDK runs in the webview on a custom `fetch` that goes through the Rust proxy to OpenRouter's Anthropic-compatible Messages API, the response streams in pieces (OpenRouter's keep-alive comments and `[DONE]` included), tool input is validated before any tool runs, the mutation tool waits for approval, and the proxy forwards only the one endpoint, headers and body fields the client sends. The live smoke test (GATE) and the debug-build CSP check are **pending (manual)**.
+**Verdict in one line.** Pass: ADR-0009 is Accepted. Everything ADR-0009 needs works: the official TypeScript SDK runs in the webview on a custom `fetch` that goes through the Rust proxy to OpenRouter's Anthropic-compatible Messages API, the response streams in pieces (OpenRouter's keep-alive comments and `[DONE]` included), tool input is validated before any tool runs, the mutation tool waits for approval, and the proxy forwards only the one endpoint, headers and body fields the client sends. The live smoke test with the user's OpenRouter key passed (streamed answer, approved rename), and the debug build's CSP blocks direct network access from the page.
 
 ## Question
 
@@ -78,11 +78,11 @@ Read on 2026-10-05 from OpenRouter's OpenAPI document and documentation pages (n
 
 | Suite | Result |
 |---|---|
-| `cargo test -p tf-ai-host` | RUST_COUNTS |
-| `cargo xtask coverage` | COVERAGE_COUNTS |
-| `pnpm --filter @typefaced/ai test:ci` | AI_COUNTS |
-| `pnpm --filter @typefaced/desktop test:ci` | DESKTOP_COUNTS |
-| Bundle check: `! grep -rE 'sk-ant-[A-Za-z0-9_-]{16,}\|sk-or-' apps/desktop/dist` | BUNDLE_RESULT |
+| `cargo test -p tf-ai-host` | 52 passed |
+| `cargo xtask coverage` | `tf-ai-host` lines 97.97% (`policy.rs` 100%, `body.rs` 97.6%, `host.rs` 98.0%, `ledger.rs` 98.3%, `vault.rs` 97.1%); adapter gate ≥ 80% |
+| `pnpm --filter @typefaced/ai test:ci` | 33 passed; 97.8% statements, 95% branches |
+| `pnpm --filter @typefaced/desktop test:ci` | 52 passed; 98.3% statements |
+| Bundle check: `! grep -rE 'sk-ant-[A-Za-z0-9_-]{16,}\|sk-or-' apps/desktop/dist` | no match (on the debug build's `dist`) |
 
 What the tests show against the ADR-0009 pass criteria:
 
@@ -91,19 +91,33 @@ What the tests show against the ADR-0009 pass criteria:
 - **Non-allowlisted destinations rejected:** only OpenRouter's Messages endpoint passes; headers, betas, body fields and model IDs are checked too.
 - **Invalid tool input never runs:** the approval callback is never called and the font is unchanged; the model receives an `INVALID_JSON` error result.
 - **The mutation tool needs approval:** declined leaves the font unchanged and returns "The user declined the change"; approved changes it.
-- **Security review without open CRITICAL or HIGH findings:** REVIEW_SUMMARY
+- **Security review without open CRITICAL or HIGH findings:** four reviews on opus (security, Rust, TypeScript, general) over the whole diff after the OpenRouter rework. No CRITICAL. The two HIGH findings were fixed: model `:variant` suffixes passed the model check (`:online` turns on OpenRouter's web plugin; now only `anthropic/<model>` without `:`), and stale Anthropic text in `CONTEXT.md` and the crate description. The MEDIUM fixes: `max_tokens` capped at 64 000 and only adaptive `thinking`, the last allowed turn stops before its tools run, `authToken: null`, a dedicated `FetchedSource` error. Open MEDIUM/LOW items are in the follow-ups.
 
-### Live smoke test (GATE) — pending (manual)
+### Live smoke test (GATE): pass
 
-To be filled in after the user runs it with their OpenRouter key: date, prompt, whether the answer streamed, whether the approval dialog appeared, the family name afterwards, the ledger line (generation ID, model, status, duration, byte counts; no body or key), which model served the request (OpenRouter's activity page), and the cost.
+Run by the user on 2026-10-08 under `tauri dev` on the `#/ai-spike` page, key stored through the page (Windows Credential Manager, account `openrouter-api-key`).
 
-### Debug-build CSP check — pending (manual)
+- **Billing refusal first.** The first two runs got HTTP 402 from OpenRouter: it reserves credit for the full `max_tokens` (64 000) before running a request, and the account's balance covered fewer. The error reached the page intact through the proxy. The user added credits; no code change.
+- **Plain prompt:** a streamed answer from the agent route (status 200, 7.7 s).
+- **Prompt "Rename the font family to Testface":** the model called `set_family_name`, the approval dialog appeared, the user approved, and the family name changed to Testface. Two requests, as expected for one tool round trip.
 
-To be filled in: the result of `fetch('https://openrouter.ai/api/v1/models')` in the devtools console of the debug build (expected: refused by `connect-src`).
+Ledger lines (`%APPDATA%com.typefaced.desktopai-usage.jsonl`; no body, prompt or key in it):
+
+| Generation ID | Model (requested) | Status | Duration | Request / response bytes |
+|---|---|---|---|---|
+| gen-1791492084-voIdin1poG0WSTs9Syl8 | anthropic/claude-opus-5.5 | 200 | 7686 ms | 1172 / 4034 |
+| gen-1791492347-dvX1clVZfbor1LBqq4Ey | anthropic/claude-opus-5.5 | 200 | 7902 ms | 1164 / 1911 |
+| gen-1791492363-jUtZCCi2yKmSebacUJqP | anthropic/claude-opus-5.5 | 200 | 2631 ms | 1485 / 1810 |
+
+The model that served each request and the cost were not recorded (OpenRouter's activity page has both).
+
+### Debug-build CSP check: pass
+
+Run by the user on 2026-10-09 in the devtools console of the debug build (`tauri build --debug --no-bundle`, bundled frontend): `fetch('https://openrouter.ai/api/v1/models')` was blocked ("violates the following Content Security Policy directive: \"connect-src ipc: http://ipc.localhost\"") and the promise rejected with `TypeError: Failed to fetch`. The same call succeeds under `tauri dev`, where the page comes from the Vite server and the CSP is not applied; that is expected, and the AI page exists only there.
 
 ## Decision
 
-Pending the two manual checks. If both pass, ADR-0009 becomes Accepted with the three accepted risks it records (key replace or delete from the webview, closed by the M3 native credential prompt; the system proxy is honoured, for corporate networks; prompts go to the upstream provider OpenRouter selects, controlled by the account's privacy settings).
+Both manual checks passed: ADR-0009 is Accepted (2026-10-09) with the three accepted risks it records (key replace or delete from the webview, closed by the M3 native credential prompt; the system proxy is honoured, for corporate networks; prompts go to the upstream provider OpenRouter selects, controlled by the account's privacy settings).
 
 ## Follow-ups
 

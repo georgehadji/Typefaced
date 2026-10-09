@@ -1,5 +1,5 @@
 # ADR-0009: AI orchestration in TypeScript on the official SDK; Rust egress proxy + keychain
-Status: Proposed · Date: 2026-09-29 · Amended: 2026-10-05 (OpenRouter)
+Status: Accepted · Date: 2026-09-29 · Amended: 2026-10-05 (OpenRouter) · Accepted: 2026-10-09
 
 Source: [implementation plan](../implementation-plan.md) §1 (D3), §3.4, §5.10, §6.2, §6.10, §11.1, §13.1; [M0 plan](../../plans/typefaced-m0-foundations-and-spikes.md) deviation 9, Steps 9.1 and 9.2.
 
@@ -88,3 +88,11 @@ Step 9.2 exit criteria (the ADR-0009 pass criteria):
 - The security review has no open CRITICAL or HIGH findings.
 
 Step 9.2 also runs a live smoke test (a GATE: the user enters the key and approves a rename) and a CSP check in a debug build. It then sets this ADR to Accepted or Rejected. Results: [spike report](../spikes/spike-4-ai-egress.md).
+
+## Acceptance (2026-10-09)
+
+All Step 9.2 exit criteria passed, with the three accepted risks above:
+
+- **Live smoke test (GATE):** with the user's OpenRouter key on the dev page, the answer streamed and the approved `set_family_name` call renamed the family (two requests, both 200, `anthropic/claude-opus-5.5`). A 402 before that (OpenRouter reserves credit for the full `max_tokens`) reached the page intact.
+- **Debug-build CSP:** `fetch('https://openrouter.ai/api/v1/models')` from the page is blocked by `connect-src ipc: http://ipc.localhost`.
+- Automated suites, coverage, bundle key check and the four reviews: see the [spike report](../spikes/spike-4-ai-egress.md).
