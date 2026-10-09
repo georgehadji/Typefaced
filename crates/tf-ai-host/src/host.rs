@@ -1,4 +1,4 @@
-//! `EgressHost`: forwards a request that passed the [`EgressPolicy`] to the Claude API
+//! `EgressHost`: forwards a request that passed the [`EgressPolicy`] to OpenRouter
 //! with the key from the [`CredentialVault`], and streams the response back as events:
 //! the head first, then text chunks, then an end, error or aborted marker.
 
@@ -7,7 +7,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use reqwest::Response;
-use reqwest::header::{HeaderName, HeaderValue, SET_COOKIE};
+use reqwest::header::{AUTHORIZATION, HeaderValue, SET_COOKIE};
 use serde::Serialize;
 use specta::Type;
 use tokio::sync::oneshot;
@@ -199,10 +199,11 @@ impl EgressHost {
             }
         };
         usage.record.status = Some(response.status().as_u16());
-        usage.record.request_id = response
-            .headers()
-            .get("request-id")
-            .and_then(|v| v.to_str().ok())
+        // OpenRouter's generation ID; `request-id` is what Anthropic itself sends.
+        let headers = response.headers();
+        usage.record.request_id = ["x-generation-id", "request-id"]
+            .iter()
+            .find_map(|name| headers.get(*name)?.to_str().ok())
             .map(shorten);
         if emit(head(&response)) {
             stream_body(response, emit, usage).await;
@@ -211,15 +212,14 @@ impl EgressHost {
 
     async fn send(&self, request: ProxyRequest, usage: &mut Usage) -> Result<Response, String> {
         let prepared = self.policy.prepare(request).map_err(|e| e.to_string())?;
-        // Parsed only after the policy has checked the method, destination and size.
-        usage.record.model = UsageRecord::model_of(prepared.body.as_deref());
+        usage.record.model = Some(shorten(&prepared.model));
         let key = self.vault.key().map_err(|e| e.to_string())?;
-        let mut key = HeaderValue::from_str(&key)
+        let mut bearer = HeaderValue::from_str(&format!("Bearer {key}"))
             .map_err(|_| "the stored API key is not a valid header value".to_owned())?;
         // Sensitive values are left out of `Debug` output and HTTP/2 header compression.
-        key.set_sensitive(true);
+        bearer.set_sensitive(true);
         let mut headers = prepared.headers;
-        headers.insert(HeaderName::from_static("x-api-key"), key);
+        headers.insert(AUTHORIZATION, bearer);
         let mut builder = self
             .client
             .request(prepared.method, prepared.url)
@@ -237,6 +237,8 @@ impl EgressHost {
 
     /// Writes the ledger line for a request that was sent. Ledger trouble never fails
     /// the request; it is reported on stderr (no headers, bodies or keys in it).
+    /// ponytail: a small blocking file append on the async task (as is the keychain read
+    /// in `send`); move both to `spawn_blocking` if the ledger grows past one line.
     fn record(&self, usage: Usage) {
         if !usage.sent {
             return;
@@ -410,7 +412,7 @@ mod tests {
                 ("authorization".into(), "Bearer test-token".into()),
                 ("cookie".into(), "session=1".into()),
             ],
-            body: Some(r#"{"model":"claude-opus-5","max_tokens":16}"#.into()),
+            body: Some(r#"{"model":"anthropic/claude-opus-5","max_tokens":16}"#.into()),
         }
     }
 
@@ -467,21 +469,28 @@ mod tests {
     #[tokio::test]
     async fn injects_the_stored_key_and_strips_caller_credentials() {
         let mut reply = Reply::ok(b"data: hi\n\n");
-        reply.headers.push(("request-id", "req_test_1"));
+        reply.headers.push(("x-generation-id", "gen-test-1"));
         let server = MockServer::start(reply).await;
         let (host, ledger) = host_for(&server.origin, "inject");
 
-        let events = fetch_all(&host, request("r1", &server.url("/v1/messages?beta=true"))).await;
+        let events = fetch_all(
+            &host,
+            request("r1", &server.url("/api/v1/messages?beta=true")),
+        )
+        .await;
 
         let got = server.received().unwrap();
         assert_eq!(got.method, "POST");
-        assert_eq!(got.target, "/v1/messages?beta=true");
-        assert_eq!(got.header("x-api-key"), [KEY]);
-        assert!(got.header("authorization").is_empty());
+        assert_eq!(got.target, "/api/v1/messages?beta=true");
+        assert_eq!(got.header("authorization"), [format!("Bearer {KEY}")]);
+        assert!(got.header("x-api-key").is_empty());
         assert!(got.header("cookie").is_empty());
         assert_eq!(got.header("anthropic-version"), ["2023-06-01"]);
         assert_eq!(got.header("content-type"), ["application/json"]);
-        assert_eq!(got.body, r#"{"model":"claude-opus-5","max_tokens":16}"#);
+        assert_eq!(
+            got.body,
+            r#"{"model":"anthropic/claude-opus-5","max_tokens":16}"#
+        );
 
         assert_eq!(events.len(), 3, "{events:?}");
         assert!(matches!(events[0], ProxyEvent::Head { status: 200, .. }));
@@ -493,10 +502,10 @@ mod tests {
 
         let lines = ledger_lines(&ledger);
         assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0]["requestId"], "req_test_1");
-        assert_eq!(lines[0]["model"], "claude-opus-5");
+        assert_eq!(lines[0]["requestId"], "gen-test-1");
+        assert_eq!(lines[0]["model"], "anthropic/claude-opus-5");
         assert_eq!(lines[0]["status"], 200);
-        assert_eq!(lines[0]["requestBytes"], 41);
+        assert_eq!(lines[0]["requestBytes"], 51);
         assert_eq!(lines[0]["responseBytes"], 10);
         assert!(!std::fs::read_to_string(&ledger).unwrap().contains(KEY));
     }
@@ -516,7 +525,7 @@ mod tests {
         .await;
         let host = Arc::new(host_for(&server.origin, "stream").0);
 
-        let (mut events, task) = spawn_fetch(&host, request("r1", &server.url("/v1/messages")));
+        let (mut events, task) = spawn_fetch(&host, request("r1", &server.url("/api/v1/messages")));
 
         assert!(matches!(
             events.recv().await,
@@ -544,7 +553,7 @@ mod tests {
         let host = Arc::new(host);
 
         let (mut events, task) =
-            spawn_fetch(&host, request("r-abort", &server.url("/v1/messages")));
+            spawn_fetch(&host, request("r-abort", &server.url("/api/v1/messages")));
         assert!(matches!(events.recv().await, Some(ProxyEvent::Head { .. })));
         assert_eq!(events.recv().await, Some(chunk("partial")));
 
@@ -566,18 +575,25 @@ mod tests {
     async fn passes_non_2xx_responses_through() {
         let server = MockServer::start(Reply {
             status: 429,
-            headers: vec![("retry-after", "7"), ("content-type", "application/json")],
+            headers: vec![
+                ("retry-after", "7"),
+                ("content-type", "application/json"),
+                ("request-id", "req_1"),
+            ],
             parts: vec![Part::Bytes(br#"{"type":"error"}"#)],
         })
         .await;
         let (host, ledger) = host_for(&server.origin, "non2xx");
 
-        let events = fetch_all(&host, request("r1", &server.url("/v1/messages"))).await;
+        let events = fetch_all(&host, request("r1", &server.url("/api/v1/messages"))).await;
 
         assert!(matches!(events[0], ProxyEvent::Head { status: 429, .. }));
         assert_eq!(header(&events[0], "retry-after"), Some("7"));
         assert_eq!(events[1..], [chunk(r#"{"type":"error"}"#), ProxyEvent::End]);
-        assert_eq!(ledger_lines(&ledger)[0]["status"], 429);
+        let line = &ledger_lines(&ledger)[0];
+        assert_eq!(line["status"], 429);
+        // Without OpenRouter's generation ID, the `request-id` header is recorded.
+        assert_eq!(line["requestId"], "req_1");
     }
 
     #[tokio::test]
@@ -590,7 +606,7 @@ mod tests {
         .await;
         let (host, _) = host_for(&server.origin, "redirect");
 
-        let events = fetch_all(&host, request("r1", &server.url("/v1/messages"))).await;
+        let events = fetch_all(&host, request("r1", &server.url("/api/v1/messages"))).await;
 
         assert!(matches!(events[0], ProxyEvent::Head { status: 302, .. }));
         assert_eq!(
@@ -608,7 +624,7 @@ mod tests {
 
         let events = fetch_all(
             &host,
-            request("r1", "https://api.anthropic.com/v1/messages"),
+            request("r1", "https://openrouter.ai/api/v1/messages"),
         )
         .await;
 
@@ -625,7 +641,7 @@ mod tests {
         let (host, _) = host_for(&server.origin, "nokey");
         host.vault().delete_key().unwrap();
 
-        let events = fetch_all(&host, request("r1", &server.url("/v1/messages"))).await;
+        let events = fetch_all(&host, request("r1", &server.url("/api/v1/messages"))).await;
 
         assert_eq!(
             events,
@@ -646,7 +662,7 @@ mod tests {
         })
         .await;
         let host = Arc::new(host_for(&server.origin, "ids").0);
-        let url = server.url("/v1/messages");
+        let url = server.url("/api/v1/messages");
 
         let long = "x".repeat(65);
         for id in ["", "has space", "slash/", long.as_str()] {
@@ -673,7 +689,7 @@ mod tests {
         let (host, ledger) = host_for(&server.origin, "gone");
 
         let mut events = Vec::new();
-        host.fetch(request("r1", &server.url("/v1/messages")), |event| {
+        host.fetch(request("r1", &server.url("/api/v1/messages")), |event| {
             events.push(event);
             false
         })
@@ -695,7 +711,7 @@ mod tests {
         let origin = format!("http://127.0.0.1:{port}");
         let (host, ledger) = host_for(&origin, "refused");
 
-        let events = fetch_all(&host, request("r1", &format!("{origin}/v1/messages"))).await;
+        let events = fetch_all(&host, request("r1", &format!("{origin}/api/v1/messages"))).await;
 
         assert!(
             matches!(&events[..], [ProxyEvent::Error { message }] if message.starts_with("the request failed"))
@@ -749,7 +765,7 @@ mod tests {
         let (ledger, path) = temp_ledger("ledger-fails");
         std::fs::create_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
         std::fs::write(path.parent().unwrap(), b"").unwrap();
-        let host = EgressHost::new(EgressPolicy::anthropic(), vault, ledger).unwrap();
+        let host = EgressHost::new(EgressPolicy::openrouter(), vault, ledger).unwrap();
         let mut usage = Usage::new();
         usage.sent = true;
         host.record(usage);
@@ -774,7 +790,7 @@ mod tests {
         let (host, ledger) = host_for(&server.origin, "abort-early");
 
         assert!(!host.abort("early"));
-        let events = fetch_all(&host, request("early", &server.url("/v1/messages"))).await;
+        let events = fetch_all(&host, request("early", &server.url("/api/v1/messages"))).await;
 
         assert_eq!(events, [ProxyEvent::Aborted]);
         assert!(server.received().is_none());

@@ -1,4 +1,4 @@
-//! AI egress commands (ADR-0009): store, check and delete the Claude API key, forward a
+//! AI egress commands (ADR-0009): store, check and delete the OpenRouter API key, forward a
 //! request through `tf-ai-host` and stream the response over a `Channel`, and abort it.
 //! No command returns the key: `tf-ai-host` gives this crate no way to read it.
 
@@ -15,34 +15,34 @@ const LEDGER_FILE: &str = "ai-usage.jsonl";
 pub fn host<R: Runtime>(app: &AppHandle<R>) -> Result<EgressHost, Box<dyn std::error::Error>> {
     let ledger = UsageLedger::new(app.path().app_data_dir()?.join(LEDGER_FILE));
     Ok(EgressHost::new(
-        EgressPolicy::anthropic(),
+        EgressPolicy::openrouter(),
         CredentialVault::production()?,
         ledger,
     )?)
 }
 
-/// Stores the Claude API key in the OS keychain, replacing any earlier key.
+/// Stores the OpenRouter API key in the OS keychain, replacing any earlier key.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn ai_set_key(host: State<'_, EgressHost>, key: String) -> Result<(), String> {
     host.vault().set_key(&key).map_err(|e| e.to_string())
 }
 
-/// Whether a Claude API key is stored.
+/// Whether an OpenRouter API key is stored.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn ai_has_key(host: State<'_, EgressHost>) -> Result<bool, String> {
     host.vault().has_key().map_err(|e| e.to_string())
 }
 
-/// Deletes the stored Claude API key, if any.
+/// Deletes the stored OpenRouter API key, if any.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn ai_delete_key(host: State<'_, EgressHost>) -> Result<(), String> {
     host.vault().delete_key().map_err(|e| e.to_string())
 }
 
-/// Forwards one request to the Claude API with the stored key. `on_event` receives the
+/// Forwards one request to OpenRouter with the stored key. `on_event` receives the
 /// response head first, then the body chunks, then an end, error or aborted marker. The
 /// command itself resolves when the response is over. Failures travel on the channel; the
 /// `Result` is there because Tauri requires it for async commands that borrow `State`.

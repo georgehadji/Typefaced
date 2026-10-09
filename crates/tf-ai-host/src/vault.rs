@@ -1,4 +1,4 @@
-//! `CredentialVault`: the Claude API key in the OS keychain (Windows Credential Manager),
+//! `CredentialVault`: the OpenRouter API key in the OS keychain (Windows Credential Manager),
 //! through keyring-core. The key can be stored, checked and deleted from outside this
 //! crate; only the egress host inside the crate can read it.
 
@@ -7,9 +7,9 @@ use keyring_core::{CredentialStore, Entry, Error as KeyringError};
 /// Keychain service of the production entry.
 pub const PRODUCTION_SERVICE: &str = "com.typefaced.desktop";
 /// Keychain account of the production entry.
-pub const PRODUCTION_ACCOUNT: &str = "anthropic-api-key";
+pub const PRODUCTION_ACCOUNT: &str = "openrouter-api-key";
 
-/// Longest accepted key, in bytes. Claude API keys are about 110 bytes.
+/// Longest accepted key, in bytes. OpenRouter keys are well under 100 bytes.
 const MAX_KEY_BYTES: usize = 512;
 
 /// Why a vault operation failed. No variant carries the key or keychain secret data.
@@ -201,7 +201,7 @@ pub(crate) mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let account = format!("anthropic-api-key-{}-{nanos}", std::process::id());
+        let account = format!("openrouter-api-key-{}-{nanos}", std::process::id());
         assert_ne!(SERVICE, PRODUCTION_SERVICE);
         assert_ne!(account, PRODUCTION_ACCOUNT);
 

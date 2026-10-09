@@ -1,0 +1,18 @@
+.ai-spike {
+  padding: 16px;
+  max-width: 760px;
+}
+
+.ai-spike textarea {
+  display: block;
+  width: 100%;
+}
+
+.ai-spike pre {
+  white-space: pre-wrap;
+}
+
+.ai-spike .approval {
+  border: 2px solid currentColor;
+  padding: 12px;
+}

@@ -117,6 +117,10 @@ allow = [
     # Apache-2.0 plus an exception that only adds permissions.
     # Needed by target-lexicon (via cfg-expr, a Tauri build dependency).
     "Apache-2.0 WITH LLVM-exception",
+    # A public-domain dedication with a fallback permissive grant (no conditions at all;
+    # OSI-approved). Needed by fast-sha256 (npm, via standardwebhooks, a dependency of
+    # @anthropic-ai/sdk; M0 Step 9.2). Allowed by the user on 2026-10-05 (Appendix B).
+    "Unlicense",
 ]
 # The list is policy, shared with npm: entries no crate uses yet are expected.
 unused-allowed-license = "allow"
