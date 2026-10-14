@@ -139,7 +139,7 @@ The M0 exit report ([m0-exit.md](../docs/milestones/m0-exit.md), *Carry-over ite
 
 ## User gates
 
-Answer these when you review the plan. Each answer goes into the *Change log*. A step that names a gate does not start before its gate has an answer.
+Answered by the user on 2026-10-14: every gate takes its proposed default (see the *Change log*). G9 stays a stop-and-ask rule.
 
 | Gate | Step | Decision asked for | Proposed default |
 |---|---|---|---|
@@ -974,3 +974,4 @@ cargo xtask coverage
 |---|---|---|---|
 | 2026-10-14 | Plan created on branch `m1/00-blueprint` | `/ecc:blueprint` for milestone M1, as proposed in `docs/milestones/m0-exit.md` | — |
 | 2026-10-14 | Revised after adversarial review (PASS WITH FIXES, 4 high): gate G10 (norad keeps glyph file names private; shadow norad font in a `tf-io` session); G1 reworded and G1(d) loss report added; `contents.plist`/`layercontents.plist` paths checked before norad parses (UNC/SMB risk); `compact()` only on load; per-layer glyph fields; created glyphs keyed by name and post-merge reference validation; journal header, transaction and flush rules; layer-level `ChangeSet`; package hardening (reserved names, ADS, symlinks, real byte counts); all error codes defined in Step 3; binary `glyph.movePoints`; `FontRepository` signature; memory-growth check; `[profile.bench]`; per-crate coverage command; deviations 11–15 | Review findings | — |
+| 2026-10-14 | Gates answered: G1 all four checks (a)–(d) plus no write for an unchanged project; G2–G8 and G10 the proposed defaults (G3: refuse UFOs with XML comments in `<outline>` with `E_UFO_UNSUPPORTED_XML`; G10: shadow `norad::Font` per open UFO); G9 stays a stop-and-ask rule. Deviation accepted: a synchronous `std::thread` engine actor instead of the async sketch in §5.12 | User review of the plan | User |
