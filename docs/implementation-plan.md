@@ -414,7 +414,7 @@ pub enum Provenance { Drawn, Traced { source: AssetId }, Generated { recipe: Rec
 - Compiles to `wasm32-unknown-unknown`, so there are no OS dependencies.
 
 **Patterns.**
-- **Strategy** — a `BooleanEngine` trait. Its adapter lives in a crate *outside* this one, so the kernel stays WASM-friendly. Spike 5 and ADR-008 chose **linesweeper** (`=0.4.0`, pure Rust): 0 failures on 581 cases, against 27 for Skia PathOps, which got contour directions wrong. linesweeper is about 3× slower (1.6 ms against 0.6 ms per overlapping glyph). The adapter drops tiny debris contours. The spike's 581 cases stay as a regression corpus, rerun on every linesweeper upgrade. Fallback: skia-safe PathOps `simplify` plus an in-house contour-direction pass, only if linesweeper shows a defect that upstream does not fix. That fallback needs libpng-2.0 and IJG added to Appendix B, or a from-source Skia build.
+- **Strategy** — a `BooleanEngine` trait. Its adapter lives in a crate *outside* this one, so the kernel stays WASM-friendly. Spike 5 and ADR-008 chose **linesweeper** (`=0.4.0`, pure Rust): 0 failures on 581 cases, against 27 for Skia PathOps (6 errors, 21 wrong contour directions). linesweeper is about 3× slower (1.6 ms against 0.6 ms per overlapping glyph). The adapter drops tiny debris contours. The spike's 581 cases stay as a regression corpus, rerun on every linesweeper upgrade. Fallback: skia-safe PathOps `simplify` plus an in-house contour-direction pass, only if linesweeper shows a defect that upstream does not fix. That fallback needs libpng-2.0 and IJG added to Appendix B, or a from-source Skia build.
 - **Iterator / Visitor** — segment iterators walk UFO point sequences as lines, cubics and quadratic splines.
 - **Culling before indexing** — the hit test skips a contour whose bounding box is out of reach. Spike 3 measured it at p95 0.5–0.6 ms in the WebView for the worst case (few large nested contours, 5,000 points), under the 1 ms budget. An R-tree (`rstar`) for dense glyphs and component-heavy layers is added only if a later profile needs it.
 
@@ -997,7 +997,7 @@ flowchart LR
   - Tools are built from the command registry's JSON Schemas with `betaTool()`.
   - Because `betaTool()` does not validate at runtime, every tool's `run` function validates its input with Ajv against the same schema before dispatching it. The shipped CSP blocks Ajv's run-time compiler (`new Function`), so production code uses Ajv's precompiled (standalone) validators (Spike 4).
   - Approval gates live inside `run`. Tools with side-effect class E or D ask the user and return a "user declined" result when refused.
-  - The SDK's HTTP transport is pointed at the Rust egress proxy through a custom `fetch`. Spike 4 confirmed the options for `@anthropic-ai/sdk` 0.131.0: `baseURL` (`https://openrouter.ai/api`), `fetch` (the IPC-backed `tauriFetch`, which resolves on the response head and then streams the body), `apiKey` (the placeholder `"injected-by-rust"`) and `dangerouslyAllowBrowser: true`. Re-check them on every SDK upgrade; never guess SDK signatures (see §13.1).
+  - The SDK's HTTP transport is pointed at the Rust egress proxy through a custom `fetch`. Spike 4 confirmed the options for `@anthropic-ai/sdk` 0.131.0: `baseURL` (`https://openrouter.ai/api`), `fetch` (the IPC-backed `tauriFetch`, which resolves on the response head and then streams the body), `apiKey` (the placeholder `"injected-by-rust"`), `authToken: null` and `dangerouslyAllowBrowser: true`. Re-check them on every SDK upgrade; never guess SDK signatures (see §13.1).
 - **`tf-ai-host` (Rust):**
   - stores the key in the OS keychain;
   - forwards only to allowlisted destinations: `POST https://openrouter.ai/api/v1/messages` (user decision 2026-10-05: OpenRouter with the user's own OpenRouter key), and later the Typefaced gateway;
@@ -1007,7 +1007,7 @@ flowchart LR
   - writes the audit log;
   - enforces per-project AI permissions and a kill switch;
   - forwards only what the client sends: no `anthropic-beta` header, a fixed list of top-level body fields, `anthropic/<model>` IDs without a `:variant`, at most 3 fallbacks, no server tools and no content the API would fetch from a URL (Steps 9.1 and 9.2). A new API feature is therefore a deliberate change to `tf-ai-host`, with a test.
-  - **The key is never readable from the webview**, so an XSS bug cannot leak a stored key. One exception in M0 and until M3 (ADR-009): the user types the key into a password field, and it crosses IPC once to be stored. M3 replaces this with a native OS credential prompt. ADR-009 also records two other accepted risks: the system proxy is honoured, and prompts go to the upstream provider that OpenRouter selects.
+  - **The key is never readable from the webview**, so an XSS bug cannot leak a stored key. One exception in M0 and until M3 (ADR-009): the user types the key into a password field, and it crosses IPC once to be stored. M3 evaluates a native OS credential prompt instead, which would also close the first accepted risk below. ADR-009 also records two other accepted risks: the system proxy is honoured, and prompts go to the upstream provider that OpenRouter selects.
 - **Engine:**
   - At the start of a mutating task, the orchestrator forks a sandbox.
   - Every mutating tool runs with `ExecCtx { origin: Ai, sandbox }`.
@@ -1435,7 +1435,7 @@ These run in CI as benchmarks with regression alerts.
 |---|---|
 | Malicious font, SVG or package files (parser exploits, zip-slip, decompression bombs) | Memory-safe Rust parsers; size, depth and time limits; zip-slip checks; nightly fuzzing; SVG external references disabled |
 | Webview XSS (e.g. via font names or AI markdown) | Strict Content-Security-Policy; no remote content; sanitised markdown; minimal Tauri capabilities; **no secrets in the webview** (until M3 the key crosses the webview once, when the user types it; ADR-009) |
-| API key theft | Key in the OS keychain; injected at the Rust egress; never logged; one allowlisted endpoint (OpenRouter's Messages API) with header, body-field and model checks. Accepted risks until M3: webview script can replace or delete the stored key; a TLS-inspecting system proxy can see it (ADR-009) |
+| API key theft | Key in the OS keychain; injected at the Rust egress; never logged; one allowlisted endpoint (OpenRouter's Messages API) with header, body-field and model checks. Accepted risks (ADR-009): webview script can replace or delete the stored key (until M3); a TLS-inspecting system proxy can see the key and the traffic (kept on purpose for corporate networks) |
 | Prompt injection via font data | Data labelled untrusted; E/D tools require confirmation; sandboxed writes; budgets |
 | Abuse of the MCP server | Off by default; localhost only; per-client tokens; sandboxed writes; read-only grants |
 | Update tampering | Signed updates (Tauri updater keys) + Authenticode/MSIX signing |
@@ -1549,7 +1549,7 @@ Estimates assume one developer working with AI assistance. Every milestone ends 
 
 | # | Milestone | Weeks | Scope | Exit criteria |
 |---|---|---|---|---|
-| M0 | Foundations & spikes | 3 | Repository and licensing setup; workspace scaffold (Cargo + pnpm + Tauri 2); CI with license gates; ADR-001…018; test corpus; `CLAUDE.md`; **four spikes (§18)** | CI green on Windows; typed IPC round-trip; spikes answered with ADRs |
+| M0 | Foundations & spikes | 3 | Repository and licensing setup; workspace scaffold (Cargo + pnpm + Tauri 2); CI with license gates; ADR-001…019; test corpus; `CLAUDE.md` (now `AGENTS.md`, which `CLAUDE.md` imports); **six spikes** (the four of §18, plus the boolean engine and persistent collections; M0 plan) | CI green on Windows; typed IPC round-trip; spikes answered with ADRs |
 | M1 | Headless engine | 4 | `tf-model`, `tf-engine` (actor, reducers, history, sandboxes, journal), `tf-commands` (~30 commands), `tf-io` (UFO/designspace + `.typefaced`), `tf-cli` (`info`, `convert`) | Byte-stable UFO round-trip on the corpus; undo/sandbox property tests green; ≥ 90% coverage |
 | M2 | Build pipeline | 5 | fontc integration (TTF, variable TTF), `tf-cff` + transplant (OTF), instancer, boolean engine, WOFF2, ttfautohint sidecar, preflight QA, build reports, differential tests | Corpus fonts build to TTF + OTF + WOFF2; OTF outlines verified; fontspector critical checks pass; export budgets met |
 | M3 | AI platform (headless) | 3 | Tool registry → Anthropic tools + MCP; `tf-mcp`; egress proxy + keychain; `@typefaced/ai` orchestrator (tool runner, streaming, validation); sandbox proposals; eval harness v0 (feature + metadata playbooks) | Claude Code (via MCP) and a minimal in-app chat can both add ligatures as a reviewable proposal; evals pass |
@@ -1631,7 +1631,7 @@ gantt
 | 005 | Native formats: UFO 3 + designspace 5, and the `.typefaced` package; `com.typefaced.*` lib keys |
 | 006 | Compiler: fontc in-process; fontmake as oracle and contingency |
 | 007 | CFF-based OTF via TTF → CFF transplant with `tf-cff` |
-| 008 | Boolean engine: skia-safe vs. linesweeper (from the spike) |
+| 008 | Boolean engine: linesweeper `=0.4.0` behind the `BooleanEngine` port (decided by Spike 5; Skia PathOps is the fallback) |
 | 009 | AI orchestration in TypeScript on the official SDK; Rust egress proxy + keychain |
 | 010 | AI edits as sandbox proposals with three-way merge |
 | 011 | Model configuration: app-side routes per task with OpenRouter fallbacks; changes gated by evals |
@@ -1640,7 +1640,7 @@ gantt
 | 014 | Studio and Workbench as workspace profiles over one engine |
 | 015 | Parametric glyph engine as the backbone of AI glyph generation |
 | 016 | Proprietary license, dependency policy and clean-room rule |
-| 017 | Persistent collections: `imbl` vs. an in-house chunked copy-on-write vector |
+| 017 | Persistent collections: `imbl` (glyph table `imbl::Vector<Arc<Glyph>>`), decided by Spike 6 over an in-house chunked copy-on-write vector |
 | 018 | Hinting: ttfautohint sidecar for TTF only in 1.0 |
 | 019 | Clean-room spacing algorithm from the published method |
 
@@ -1833,5 +1833,7 @@ Use these for every change, especially when an AI assistant writes the code. The
 | 2026-10-14 | §7.3 | Layered frames during a gesture; the drag budget read against the display's cadence; no R-tree | Spike 3, ADR-013 |
 | 2026-10-14 | §10.4 | Commit budget restated: engine reducer + patch encode < 8 ms p95, measured in Rust; page-side round trip recorded, not gated. Drag budget read against the display's cadence | Spike 3, ADR-002 and ADR-013 *Acceptance* (2026-10-04) |
 | 2026-10-14 | §11.1 | Webview and key-theft rows: the M0 key-entry exception and the accepted risks | Spike 4, ADR-009 |
+| 2026-10-14 | §14 | M0 row: ADR-001…019 and six spikes, as M0 delivered them | M0 plan deviations 3 and 4; `docs/milestones/m0-exit.md` |
+| 2026-10-14 | §16 | ADR-008 and ADR-017 rows state the decisions the spikes made | Spikes 5 and 6 |
 | 2026-10-14 | §15 | R3, R10 and R13 updated; R15 (OpenRouter as a second party) and R16 (untrusted UFO input through norad) added; R9 corrected to the pinned `=2.0.0-rc.25` | Spikes 1, 3, 4 and 5; Step 2 |
 | 2026-10-14 | Appendix B | `Apache-2.0 WITH LLVM-exception` added to the allowed list (`Unlicense` was already there); M0 additions listed; libpng-2.0 and IJG noted as not added; enforcement names `cargo xtask licenses-npm` | `deny.toml`; M0 Steps 3.1 and 9.2 |

@@ -11,7 +11,7 @@ All evidence below comes from existing artifacts: merged PRs, CI runs, spike rep
 ### 1. CI green on Windows
 
 - The latest `main` run is [CI run 37890768807](https://github.com/georgehadji/Typefaced/actions/runs/37890768807), on `405ddb2` (merge of #14), 2026-10-09. Result: **success**.
-  - Job `windows` (windows-latest): every step passed. Steps: install, WASM build, frontend build, fmt, clippy (also with the `bench` feature), `cargo test --workspace`, bindings diff, `pnpm lint && pnpm typecheck && pnpm test:ci`, `cargo xtask check-deps`, the API-key check, the clean-tree check and, as a push to `main`, "Build the app (debug, no installer)".
+  - Job `windows` (windows-latest): every step passed. Steps: install, WASM build, frontend build, fmt, clippy, clippy and the `bench::` tests with the `bench` feature, `cargo test --workspace`, bindings diff, `pnpm lint && pnpm typecheck && pnpm test:ci`, `cargo xtask check-deps`, the API-key check, the clean-tree check and, as a push to `main`, "Build the app (debug, no installer)".
   - Job `gates` (ubuntu-latest): `cargo deny check`, `cargo xtask licenses-npm`, `cargo xtask context check` and `cargo xtask coverage` passed.
 - The two runs before it on `main` also succeeded: [37308624264](https://github.com/georgehadji/Typefaced/actions/runs/37308624264) (`6c2b255`, #13) and [37233355129](https://github.com/georgehadji/Typefaced/actions/runs/37233355129) (`7a32f2e`, #12).
 - The pipeline came from Step 3.1 ([#4](https://github.com/georgehadji/Typefaced/pull/4), xtask gates) and Step 3.2 ([#5](https://github.com/georgehadji/Typefaced/pull/5), CI workflows).
@@ -37,7 +37,7 @@ All evidence below comes from existing artifacts: merged PRs, CI runs, spike rep
 | 5 Boolean engine | 10 · [#10](https://github.com/georgehadji/Typefaced/pull/10) (`559fbad`) | [ADR-0008](../adr/0008-boolean-engine.md) Accepted 2026-10-03 | linesweeper: 0 failures on 581 cases; Skia PathOps failed 27 | [spike-5-boolean.md](../spikes/spike-5-boolean.md) |
 | 6 Persistent collections | 11 · [#3](https://github.com/georgehadji/Typefaced/pull/3) (`daad381`) | [ADR-0017](../adr/0017-persistent-collections.md) Accepted 2026-09-30 | `imbl::Vector<Arc<Glyph>>` | [spike-6-collections.md](../spikes/spike-6-collections.md) |
 
-The other ADRs (0001, 0003–0005, 0010, 0012, 0014–0016, 0018, 0019) were Accepted as written in Step 4 ([#1](https://github.com/georgehadji/Typefaced/pull/1), `10c5081`). The check from the Step 12 brief prints nothing:
+The other ADRs (0001, 0003–0005, 0010–0012, 0014–0016, 0018, 0019) were Accepted as written in Step 4 ([#1](https://github.com/georgehadji/Typefaced/pull/1), `10c5081`). The check from the Step 12 brief prints nothing:
 
 ```text
 $ grep -l '^Status: Proposed' docs/adr/0*.md
@@ -53,7 +53,7 @@ $
 
 ## Numbers against budgets
 
-All numbers were measured on one laptop: i7-9750H, 32 GB, Windows 11, WebView2. The conditions are given for each row, because machine load changed the results by up to about 40%.
+All numbers were measured on one laptop: i7-9750H, 32 GB, Windows 11, WebView2. The conditions are given for each row, because machine load changed the results by 40% or more (up to about 80% for the 5,000-point patch stream in spike 3).
 
 | Budget (source) | Measured | Result |
 |---|---|---|
@@ -67,7 +67,7 @@ All numbers were measured on one laptop: i7-9750H, 32 GB, Windows 11, WebView2. 
 | Single-glyph replace < 50 µs; 200 snapshots ≤ 10% memory, at 30,000 glyphs (Step 11) | `imbl::Vector`: 6.6 µs (slowest position, run 3); growth 1.6%. Chunked vector 23.7 µs and 2.7%; naive 1,179 µs and 62.7% | **Met** |
 | Memory, 1,000 glyphs with 200 undo steps, < 500 MB (§10.4) | Synthetic glyphs (100 points each): base 2.46 MiB + 0.85 MiB for 200 snapshots with `imbl::Vector` | **Met** for the data structure only; the real model is measured in M1 |
 | fontc binary size and build time (Step 6, recorded, no budget) | +14.4 MB in the release binary; cold release build 42 min 54 s, of which 25 min was the fat-LTO link | Recorded |
-| AI egress pass criteria (ADR-0009) | `tf-ai-host` 52 tests, 97.97% line coverage; `@typefaced/ai` 33 tests; no key-shaped string in the bundle; live smoke test (3 requests, all 200) and debug-build CSP check pass | **Met** |
+| AI egress pass criteria (ADR-0009) | `tf-ai-host` 52 tests, 97.97% line coverage; `@typefaced/ai` 33 tests; no key-shaped string in the bundle; live smoke test (two HTTP 402 refusals from OpenRouter's credit reservation, fixed by adding credits; then 3 requests, all 200) and debug-build CSP check pass | **Met** |
 
 ## Decisions that changed during M0
 
@@ -77,7 +77,7 @@ All numbers were measured on one laptop: i7-9750H, 32 GB, Windows 11, WebView2. 
 | **Layered canvas drawing.** Still content goes into a bitmap once per revision, vectors are drawn only for what moves, and handles only for the selection. `Path2D` caching alone gives 30 fps | ADR-0013 *Acceptance* (2026-10-04); plan §7.3 |
 | **No spatial index (R-tree) for M0.** Per-contour bounding-box culling meets the hit-test budget | Spike 3 *Decision* 2; plan §5.2, §7.3 |
 | **AI provider: OpenRouter** (user decision 2026-10-05). The client uses an OpenRouter key and the Anthropic-compatible `POST /api/v1/messages`; the SDK is kept with `baseURL` `https://openrouter.ai/api`. App-side model routes per task use up to 3 OpenRouter fallbacks. The egress policy allows only that one endpoint | ADR-0009 amendment, ADR-0011 amendment; plan §1, §6.2, §6.4, §15 |
-| **Key entry crosses the webview once** (deviation 9). Three risks are accepted (see *New risks*) | ADR-0009 |
+| **Key entry crosses the webview once** (deviation 9). Three risks are accepted (see *Accepted risks* below) | ADR-0009 |
 | **`tf-cff` is built, not reused.** write-fonts 0.52.0 has no CFF 1 writer, and allsorts 0.17.0 cannot write a new font. write-fonts' `FontBuilder` is reused for the font assembly | ADR-0007; spike 2; plan §5.8 |
 | **fontc input rules.** Designspace 4 features only, one shared `features.fea` for all masters, no XML comments inside glyphs. fontc panics are caught (`catch_unwind`) | ADR-0006; spike 1; plan §5.13 |
 | **Boolean engine: linesweeper `=0.4.0`**, in an adapter crate. The fallback is Skia `simplify` plus an in-house direction pass | ADR-0008; plan §5.2, §15 R10 |
