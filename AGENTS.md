@@ -45,13 +45,15 @@ this one.
 
 ## Commands
 Toolchains are pinned: Rust in `rust-toolchain.toml`, Node in `.nvmrc`, pnpm in `package.json`.
-The gates also need `cargo install --locked cargo-deny cargo-llvm-cov`.
-Build the frontend before any cargo command: the desktop crate embeds `apps/desktop/dist`.
+The gates also need `cargo install --locked cargo-deny cargo-llvm-cov`; the WASM kernel needs `wasm-pack`.
+Build the WASM kernel, then the frontend, before any cargo command: the frontend imports
+`packages/geometry-wasm/pkg`, and the desktop crate embeds `apps/desktop/dist`.
 
 | Task | Command |
 |---|---|
 | Install | `pnpm install --frozen-lockfile` |
 | Dev (app with hot reload) | `pnpm --filter @typefaced/desktop tauri dev` |
+| Build the WASM kernel | `wasm-pack build crates/tf-wasm --target web --out-dir ../../packages/geometry-wasm/pkg -- --locked` |
 | Build the frontend | `pnpm --filter @typefaced/desktop build` |
 | Build the app (debug, no installer) | `pnpm --filter @typefaced/desktop tauri build --debug --no-bundle` |
 | Test | `cargo test --workspace` · `pnpm test` (with coverage gate: `pnpm test:ci`) |
@@ -62,10 +64,20 @@ Build the frontend before any cargo command: the desktop crate embeds `apps/desk
 | Licenses (Rust · npm) | `cargo deny check` · `cargo xtask licenses-npm` (one allow-list: `deny.toml`) |
 | Coverage gates (domain + application ≥ 90%, adapters ≥ 80%) | `cargo xtask coverage` |
 | `CONTEXT.md` maps | `cargo xtask context check` · regenerate the root file map: `cargo xtask context update` |
+| Test corpus (downloaded, not committed) | `cargo xtask corpus fetch` · `cargo xtask corpus verify` |
+| Corpus-backed compiler tests (after `corpus fetch`) | `cargo test -p tf-compile -- --ignored` |
+| Compile a source to TTF or OTF (the output extension picks the format; OTF from `.ufo` only) | `cargo run --release -p tf-compile --example compile -- <input> <out.ttf or out.otf>` |
+| Check a built font (needs fontTools and `pip install --user opentype-sanitizer`) | `python -m ots <font>` · `ttx -l <font>` · `ttx -t "CFF " -o <out.ttx> <font.otf>` |
+| AI client tests | `pnpm --filter @typefaced/ai test` |
+| Geometry kernel timing | `cargo bench -p tf-geometry --bench hit_test` |
+| Dev-only `bench` feature (never pass it to `tauri build`) | `cargo clippy -p typefaced-desktop --all-targets --features bench -- -D warnings` · `cargo test -p typefaced-desktop --features bench bench::` |
+| Dev-only pages | `#/bench`: `pnpm --filter @typefaced/desktop tauri dev --features bench` · `#/ai-spike`: `pnpm --filter @typefaced/desktop tauri dev` |
+| Spike workspaces (outside the root workspace; `spike-boolean` needs `cargo xtask corpus fetch` first) | `cargo test --manifest-path spikes/<name>/Cargo.toml` · `cargo bench --manifest-path spikes/<name>/Cargo.toml` |
 
 ## CI
 GitHub Actions (`.github/workflows/ci.yml`) runs on every PR and on pushes to `main`:
-- `windows` (windows-latest): the invariants in order: install, frontend build, fmt, clippy,
+- `windows` (windows-latest): the invariants in order: install, WASM build, frontend build, fmt, clippy,
+  clippy and `bench::` tests with the `bench` feature,
   tests, bindings diff, `pnpm lint && pnpm typecheck && pnpm test:ci` (TS coverage >= 80%),
   `cargo xtask check-deps`, no API keys, clean tree. On `main` also the debug app build.
 - `gates` (ubuntu-latest): `cargo deny check`, `cargo xtask licenses-npm`,

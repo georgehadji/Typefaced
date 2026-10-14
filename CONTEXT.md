@@ -44,6 +44,7 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | Repository gates (layering, licenses, coverage, corpus) | `xtask/src/` |
 | Test fonts | `tests/fixtures/` (committed), `tests/corpus/` (downloaded) |
 | Spike code and results | `spikes/`, `docs/spikes/` |
+| What a milestone delivered, its evidence and carry-over items | `docs/milestones/` |
 
 ## Folder map
 
@@ -81,6 +82,7 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | `crates/tf-wasm/src/` | [CONTEXT.md](crates/tf-wasm/src/CONTEXT.md) | The exported WASM functions |
 | `docs/` | [CONTEXT.md](docs/CONTEXT.md) | Research, implementation plan |
 | `docs/adr/` | [CONTEXT.md](docs/adr/CONTEXT.md) | Architecture decision records |
+| `docs/milestones/` | [CONTEXT.md](docs/milestones/CONTEXT.md) | Milestone exit reviews |
 | `docs/spikes/` | [CONTEXT.md](docs/spikes/CONTEXT.md) | Spike reports |
 | `packages/` | [CONTEXT.md](packages/CONTEXT.md) | Shared TypeScript packages |
 | `packages/ai/` | [CONTEXT.md](packages/ai/CONTEXT.md) | Claude client of the webview (Anthropic SDK, via OpenRouter, over the Rust egress proxy) |
@@ -268,6 +270,7 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── 0019-clean-room-spacing-algorithm.md
 │   │   ├── README.md
 │   │   └── template.md
+│   ├── milestones/m0-exit.md
 │   ├── spikes/
 │   │   ├── spike-1-fontc.md
 │   │   ├── spike-2-cff.md

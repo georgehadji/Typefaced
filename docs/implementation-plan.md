@@ -75,8 +75,8 @@ The AI agent runs in the webview on the **official Anthropic TypeScript SDK**. T
 
 **Assumptions to confirm** (see §17):
 
-- Claude (the Anthropic API) is the LLM provider.
-- Users bring their own API key in the 1.0 beta; a hosted gateway for users without keys is decided before the public launch.
+- Claude models are the LLMs. Since the user decision of 2026-10-05 they are reached through OpenRouter's Anthropic-compatible Messages API, not the Anthropic API directly (ADR-0009, ADR-0011; Spike 4).
+- Users bring their own OpenRouter API key in the 1.0 beta; a hosted gateway for users without keys is decided before the public launch.
 - Latin script comes first; Greek and Cyrillic next.
 - The GitHub repository either becomes private or deliberately stays source-visible.
 
@@ -387,9 +387,9 @@ pub enum PointKind { Move, Line, Curve, QCurve, OffCurve }   // UFO point semant
 pub enum Provenance { Drawn, Traced { source: AssetId }, Generated { recipe: RecipeId, model: Option<String>, prompt_hash: Option<String> }, Imported { format: String } }
 ```
 
-**Persistent collections.** Use `imbl` (MPL-2.0, which is allowed unmodified under Appendix B) or an in-house chunked copy-on-write vector (chunks of 64 `Arc<Glyph>`). A spike and ADR-017 decide. Either way, an edit costs O(chunk size), not O(glyph count), so 30,000-glyph CJK fonts stay fast.
+**Persistent collections.** `imbl` 7.x, used unmodified (MPL-2.0, allowed under Appendix B), decided by Spike 6 and ADR-017. The glyph table is an `imbl::Vector<Arc<Glyph>>` indexed by `GlyphId`. A deleted glyph leaves a tombstone slot (for example `Option<Arc<Glyph>>`), so IDs stay dense; they are compacted only on load or save. Kerning, groups and the name ↔ id index use `imbl::OrdMap` or `imbl::HashMap` (benchmarked in M1). At 30,000 glyphs the spike measured a single-glyph replace in at most 6.6 µs (budget 50 µs) and 1.6% memory growth for 200 single-edit snapshots (budget 10%). The in-house chunked vector also passed, but it was not adopted: its edit cost grows with the glyph count, and it covers only the glyph table.
 
-**Libraries.** serde, indexmap, smallvec, `imbl` (or in-house).
+**Libraries.** serde, indexmap, smallvec, `imbl`.
 
 **Testing.**
 - Property tests (`proptest`) for the invariants: contour point sequences valid, glyph names unique, component references resolvable.
@@ -414,11 +414,11 @@ pub enum Provenance { Drawn, Traced { source: AssetId }, Generated { recipe: Rec
 - Compiles to `wasm32-unknown-unknown`, so there are no OS dependencies.
 
 **Patterns.**
-- **Strategy** — a `BooleanEngine` trait. The Skia PathOps and linesweeper adapters live *outside* this crate, so the kernel stays WASM-friendly.
+- **Strategy** — a `BooleanEngine` trait. Its adapter lives in a crate *outside* this one, so the kernel stays WASM-friendly. Spike 5 and ADR-008 chose **linesweeper** (`=0.4.0`, pure Rust): 0 failures on 581 cases, against 27 for Skia PathOps (6 errors, 21 wrong contour directions). linesweeper is about 3× slower (1.6 ms against 0.6 ms per overlapping glyph). The adapter drops tiny debris contours. The spike's 581 cases stay as a regression corpus, rerun on every linesweeper upgrade. Fallback: skia-safe PathOps `simplify` plus an in-house contour-direction pass, only if linesweeper shows a defect that upstream does not fix. That fallback needs libpng-2.0 and IJG added to Appendix B, or a from-source Skia build.
 - **Iterator / Visitor** — segment iterators walk UFO point sequences as lines, cubics and quadratic splines.
-- **Spatial index** — an R-tree (`rstar`) for hit testing in dense glyphs and component-heavy layers.
+- **Culling before indexing** — the hit test skips a contour whose bounding box is out of reach. Spike 3 measured it at p95 0.5–0.6 ms in the WebView for the worst case (few large nested contours, 5,000 points), under the 1 ms budget. An R-tree (`rstar`) for dense glyphs and component-heavy layers is added only if a later profile needs it.
 
-**Libraries.** kurbo (MIT/Apache-2.0), rstar.
+**Libraries.** kurbo (MIT/Apache-2.0); rstar if needed later.
 
 **Testing.**
 - Property tests: fitting error bounds, cubic→quadratic error below tolerance, area invariants for boolean operations.
@@ -427,7 +427,8 @@ pub enum Provenance { Drawn, Traced { source: AssetId }, Generated { recipe: Rec
 **WASM facade (`tf-wasm`).**
 - Coarse-grained calls on typed arrays: `hitTest`, `snap`, `constrainSmooth`, `fitStroke`, `interpolate`.
 - Keeps call overhead negligible.
-- Size budget: < 350 KB gzipped.
+- Size budget: < 350 KB gzipped. The Spike 3 module (hit test and translate) was 16.3 KiB gzipped.
+- Loaded from bytes inlined in the bundle, not with `fetch`, because the CSP's `connect-src` allows only IPC. Compiling it needs `script-src 'wasm-unsafe-eval'` (Spike 3).
 
 ### 5.3 `tf-ops` — glyph and font operations
 
@@ -591,7 +592,7 @@ This is what lets the AI create whole glyph sets reliably (§6.6).
 
 **Patterns.**
 - **Builder** — `CffBuilder::new(upm).glyph(name, advance, path)…build()`.
-- **Encoder / Visitor** — the Type 2 charstring encoder visits path segments and emits `rmoveto` / `rlineto` / `rrcurveto` with operator folding (`hlineto`, `vhcurveto`, …).
+- **Encoder / Visitor** — the Type 2 charstring encoder visits path segments and emits `rmoveto` / `rlineto` / `rrcurveto`. Operator folding (`hlineto`, `vhcurveto`, …) and argument merging are not built yet. In Spike 2, with no merging and no subroutines, the OTFs were about 40% larger than the TTFs.
 - **Intermediate representation** — typed INDEX and DICT structures before bytes.
 - **Strategy** — optimisation levels: none, operator folding, subroutinisation (after 1.0).
 
@@ -599,17 +600,18 @@ This is what lets the AI create whole glyph sets reliably (§6.6).
 - The INDEX serialiser and the DICT operand encoder (integer and real encodings).
 - Top DICT and Private DICT, with the font matrix set from the font's units per em.
 - The String INDEX and a custom charset for glyph names.
-- The CharStrings INDEX, with widths encoded against `defaultWidthX` / `nominalWidthX`; the pair is chosen to minimise size.
+- The CharStrings INDEX, with widths encoded against `defaultWidthX` / `nominalWidthX`. Both are set to the most common advance, so most glyphs store no width.
 - FontBBox.
 - Empty subroutine INDEXes in 1.0.
 - No hints in 1.0.
+- Not yet written: the Top DICT FontInfo (`ItalicAngle`, underline metrics, `isFixedPitch`, `FullName`, `FamilyName`, `Notice`). OpenType consumers read `post` and `name` instead; M2 fills these from the same values.
 
-**Build or reuse.** A spike evaluates `allsorts` (Apache-2.0), whose subsetter already serialises CFF structures. Otherwise, write it from scratch (estimated 1.5–2.5k lines of Rust).
+**Build or reuse: built (Spike 2, ADR-007).** write-fonts 0.52.0 has no CFF 1 writer (only CFF2 INDEX code), and allsorts 0.17.0 cannot build a new font: its INDEX and DICT types cannot be filled, and its charstring writer is private. So `tf-cff` is written from TN #5176 and TN #5177: about 650 lines of non-test Rust for the writer, plus about 360 for the transplant and the UFO outline reader. write-fonts' `FontBuilder` is reused for the font assembly (`OTTO` tag, table order, checksums).
 
-**Verification.** Three independent checks run on every change in CI:
-1. Round-trip parse with `read-fonts`, then outline extraction with `skrifa`; outlines must equal the rounded source outlines exactly.
-2. `ttx` (fontTools) and OpenType Sanitizer, in CI only.
-3. Rendering comparison against a fontmake-built OTF at several sizes.
+**Verification.** Three independent checks:
+1. Round-trip parse with `read-fonts`, then outline extraction with `skrifa`; outlines must equal the rounded source outlines exactly. Runs in CI. Spike 2 found 0 point differences on the fixture and on all six Inria Sans styles.
+2. `ttx` (fontTools) and OpenType Sanitizer. Run by hand in Spike 2; not yet in CI (M2).
+3. Rendering comparison against a fontmake-built OTF at several sizes. Not done in M0 (M2). Spike 2 checked rendering in Windows Font Viewer instead.
 
 **After 1.0.** Subroutinisation (smaller files). CFF2 for variable OTF is not planned: variable fonts ship as TTF.
 
@@ -783,7 +785,7 @@ flowchart LR
 3. **Prepare the source.**
    - Apply the component policy (keep / decompose nested / decompose mixed).
    - Production glyph names (AGL / `uniXXXX`).
-   - Remove overlaps for static targets.
+   - Remove overlaps for static targets (linesweeper behind `BooleanEngine`, §5.2; glyphs can run in parallel).
    - Round coordinates.
    - Contour direction per flavour: TrueType outer contours clockwise, CFF counter-clockwise.
    - Resolve rules at instance locations.
@@ -791,13 +793,24 @@ flowchart LR
 5. **Compile with fontc (in-process).**
    - Start by writing a temporary UFO + designspace (norad) and calling fontc's library entry point (`fontc::generate_font`; confirmed in Spike 1).
    - Later, implement fontc's `Source` trait on the snapshot for builds without temporary files.
-   - Stay within designspace v4 features until fontc supports v5.
+   - Stay within designspace v4 features until fontc supports v5. Spike 1 found that fontc 1.0.0 panics on discrete axes and on instance locations in user coordinates. It also ignores `<variable-fonts>`, avar2 `<mappings>` and axis labels (no `STAT` axis values).
+   - Write **one shared `features.fea`** for all masters: fontc stops with `NonIdenticalFea` when masters differ.
+   - Write **no XML comments inside `<glyph>`**: norad 0.18.4 rejects them.
+   - Call fontc through one adapter that catches panics (`catch_unwind`) and returns them as errors. This works only while the release profile keeps `panic = "unwind"`; with `abort`, compiles need a worker process.
+   - Spike 1 measured about 1.7 s per 1,000 glyphs for a static TTF, on a machine saturated by other builds. That is within the 2 s budget with about 15% margin; re-time it on an idle machine before the CI budget is set.
 6. **CFF transplant, for OTF.** Take fontc's TTF for everything that doesn't depend on outlines (cmap, name, OS/2, hhea, hmtx advances, GSUB, GPOS, GDEF, STAT), then:
    - drop `glyf`/`loca`;
    - set `maxp` to version 0.5 and `post` to version 3.0;
    - build `CFF ` from the original **cubic** outlines (not from fontc's quadratic ones), in fontc's glyph order;
    - recompute the head bounding box, `hmtx` left sidebearings and `hhea` extents from the cubic bounds;
    - set the sfnt version to `OTTO`; recompute checksums.
+
+   As built in Spike 2 (`tf-compile::ttf_to_otf`):
+   - It also drops `cvt `, `fpgm`, `prep`, `hdmx`, `LTSH`, `VDMX`, `gasp` and `DSIG`, and keeps `post`'s italic angle, underline metrics and `isFixedPitch`.
+   - A `.notdef` that fontc made up (the source has none) is taken from `glyf`, with its contours reversed.
+   - Glyphs are keyed by fontc's production names in `post`.
+   - It rejects variable fonts, fonts with `vmtx` (their top sidebearings would need recomputing), and fonts that already have `CFF ` or `CFF2`.
+   - Speed: about 1.3 s per 1,000 glyphs for the whole OTF path, under the 3 s budget (release build without fat LTO, light machine load).
 7. **Hinting (optional).** TTF → ttfautohint sidecar, under the FreeType License. CFF output is unhinted in 1.0.
 8. **Packaging.** WOFF2 through `woofwoof`.
 9. **Verify.**
@@ -920,7 +933,7 @@ Every finding carries an explanation and, where possible, a quick-fix command.
 
 ### 5.18 `tf-ai-host`, `tf-mcp`, `tf-platform`, `tf-cli` and the desktop shell
 
-- **`tf-ai-host`** — the Rust half of the AI subsystem (§6.2): credential vault, egress proxy, budget ledger, audit log.
+- **`tf-ai-host`** — the Rust half of the AI subsystem (§6.2): credential vault, egress proxy (to OpenRouter's Anthropic-compatible Messages API since Spike 4), budget ledger, audit log.
 - **`tf-mcp`** — the MCP server (§6.9).
 - **`tf-platform`** — OS services: keychain (`keyring`), file watching (`notify`), app directories, **per-user font installation for testing**, clipboard, updater hooks.
 - **`tf-cli`** — a headless command-line tool:
@@ -982,9 +995,9 @@ flowchart LR
 
 - **`@typefaced/ai` (TypeScript)** runs the agent on the official SDK's **tool runner** (`client.beta.messages.toolRunner`).
   - Tools are built from the command registry's JSON Schemas with `betaTool()`.
-  - Because `betaTool()` does not validate at runtime, every tool's `run` function validates its input with Ajv against the same schema before dispatching it.
+  - Because `betaTool()` does not validate at runtime, every tool's `run` function validates its input with Ajv against the same schema before dispatching it. The shipped CSP blocks Ajv's run-time compiler (`new Function`), so production code uses Ajv's precompiled (standalone) validators (Spike 4).
   - Approval gates live inside `run`. Tools with side-effect class E or D ask the user and return a "user declined" result when refused.
-  - The SDK's HTTP transport is pointed at the Rust egress proxy through a custom `fetch`. The exact SDK option is confirmed in Spike 4; never guess SDK signatures (see §13.1).
+  - The SDK's HTTP transport is pointed at the Rust egress proxy through a custom `fetch`. Spike 4 confirmed the options for `@anthropic-ai/sdk` 0.131.0: `baseURL` (`https://openrouter.ai/api`), `fetch` (the IPC-backed `tauriFetch`, which resolves on the response head and then streams the body), `apiKey` (the placeholder `"injected-by-rust"`), `authToken: null` and `dangerouslyAllowBrowser: true`. Re-check them on every SDK upgrade; never guess SDK signatures (see §13.1).
 - **`tf-ai-host` (Rust):**
   - stores the key in the OS keychain;
   - forwards only to allowlisted destinations: `POST https://openrouter.ai/api/v1/messages` (user decision 2026-10-05: OpenRouter with the user's own OpenRouter key), and later the Typefaced gateway;
@@ -992,8 +1005,9 @@ flowchart LR
   - streams server-sent events back over a Tauri channel;
   - records usage in the budget ledger;
   - writes the audit log;
-  - enforces per-project AI permissions and a kill switch.
-  - **The key never exists in the webview**, so an XSS bug cannot leak it.
+  - enforces per-project AI permissions and a kill switch;
+  - forwards only what the client sends: no `anthropic-beta` header, a fixed list of top-level body fields, `anthropic/<model>` IDs without a `:variant`, at most 3 fallbacks, no server tools and no content the API would fetch from a URL (Steps 9.1 and 9.2). A new API feature is therefore a deliberate change to `tf-ai-host`, with a test.
+  - **The key is never readable from the webview**, so an XSS bug cannot leak a stored key. One exception in M0 and until M3 (ADR-009): the user types the key into a password field, and it crosses IPC once to be stored. M3 evaluates a native OS credential prompt instead, which would also close the first accepted risk below. ADR-009 also records two other accepted risks: the system proxy is honoured, and prompts go to the upstream provider that OpenRouter selects.
 - **Engine:**
   - At the start of a mutating task, the orchestrator forks a sandbox.
   - Every mutating tool runs with `ExecCtx { origin: Ai, sandbox }`.
@@ -1189,13 +1203,15 @@ flowchart LR
 
 - **Paradigm:** unidirectional data flow (Flux/Elm style) with immutable updates.
 - **Committed state** is always the engine's. The replica only applies patches.
-- **Transient state** lives only in the UI: point positions during a drag, marquee rectangles, snapping guides. It is computed locally, with the WASM kernel, and discarded on commit.
+- **Transient state** lives only in the UI: point positions during a drag, marquee rectangles, snapping guides. It is computed locally, with the WASM kernel. Commits are asynchronous: the UI keeps the transient state until the engine's patch for that commit arrives, then discards it (ADR-002).
 - **Optimistic updates** only for cheap, predictable commands (e.g. toggling a flag); rolled back if the engine rejects them.
 - **Large fonts:** glyph data loads lazily. The grid requests glyphs for the visible rows, and the core renders thumbnails (`Rasterizer` port) when fonts exceed about 5,000 glyphs.
 - **Outline payloads** use a packed binary format:
   - `Float64Array` coordinates;
   - `Uint8Array` point-type flags (on-curve kind + smooth);
   - `Uint32Array` contour ends.
+
+  Binary is mandatory for outline data: raw request bodies and `tauri::ipc::Response` bytes (Spike 3, ADR-002). At 5,000 points a binary commit round trip had p95 17.0–17.3 ms against 46.0–47.6 ms for JSON. Commands carrying fewer than about 100 values may stay JSON.
 
 ### 7.3 Canvas engine (`@typefaced/canvas`)
 
@@ -1211,11 +1227,17 @@ flowchart LR
 - **State (tools as FSMs):** every tool is a typed state machine using discriminated unions, e.g. Pen: `Idle → PlacingOnCurve → DraggingHandles → Idle`. Tools: pointer, pen, pencil (freehand → curve fitting in WASM), knife, shapes, measure, sidebearings, kerning, anchors, components, hand/zoom.
 - **Command:** a gesture ends in one committed command (a transaction), so it is one undo step.
 - **Flyweight / cache:** `Path2D` objects cached by (glyph id, revision); off-screen canvases for static layers.
+- **Layered frames during a gesture (Spike 3, ADR-013).** `Path2D` caching alone is not enough, because the GPU process re-fills every filled path on every frame. On the spike machine a cached frame of the whole 5,000-point glyph plus all handles ran at 30 fps. So:
+  - content that does not move during a gesture is drawn once per glyph revision into an offscreen bitmap and copied each frame;
+  - vectors are drawn per frame only for what moves;
+  - point handles are drawn for the selection only.
+
+  This held the display's cadence: frame p95 16.8 ms against an empty-frame p95 of 16.8 ms.
 - **Scheduler:** redraws are coalesced into one `requestAnimationFrame` per frame and triggered by events, never by a constant loop.
 
 **Coordinates.** Font units with y pointing up; one view transform handles zoom, pan and device pixel ratio.
 
-**Performance budget.** 60 fps drag on a 5,000-point glyph; hit testing in under 1 ms (WASM R-tree).
+**Performance budget.** 60 fps drag on a 5,000-point glyph, read as frame-time p95 within 2 ms of the display's empty-frame cadence; hit testing in under 1 ms (WASM kernel with per-contour bounding-box culling, §5.2). A frame-time regression test runs in the real WebView.
 
 **Testing.** FSM unit tests (transition tables), plus visual regression tests that render reference scenes to PNG and compare them with pixelmatch.
 
@@ -1390,8 +1412,8 @@ These run in CI as benchmarks with regression alerts.
 |---|---|
 | Cold start to usable window | < 1.5 s |
 | Open a 1,000-glyph project | < 1 s (lazy); full load < 2 s |
-| Point drag | 60 fps (frame < 16 ms) |
-| Commit round-trip (IPC + reducer + patch) | < 8 ms at the 95th percentile |
+| Point drag | 60 fps: frame-time p95 within 2 ms of the display's empty-frame cadence (16.7 ms at 60 Hz); needs the layered drawing of §7.3 |
+| Commit (engine reducer + patch encode, measured in Rust) | < 8 ms at the 95th percentile. The UI never blocks on a commit. The page-side IPC round trip is recorded, not gated: an empty WebView2 `invoke` alone has p95 7.1–9.0 ms (Spike 3, ADR-002). Outline payloads are binary; commits and patches carry only the touched points |
 | Preview update after a feature/kerning edit | < 300 ms |
 | Export static TTF / OTF, 1,000 glyphs | < 2 s / < 3 s |
 | Auto-space a whole 1,000-glyph font | < 1 s |
@@ -1412,8 +1434,8 @@ These run in CI as benchmarks with regression alerts.
 | Threat | Controls |
 |---|---|
 | Malicious font, SVG or package files (parser exploits, zip-slip, decompression bombs) | Memory-safe Rust parsers; size, depth and time limits; zip-slip checks; nightly fuzzing; SVG external references disabled |
-| Webview XSS (e.g. via font names or AI markdown) | Strict Content-Security-Policy; no remote content; sanitised markdown; minimal Tauri capabilities; **no secrets in the webview** |
-| API key theft | Key in the OS keychain; injected at the Rust egress; never logged; host allowlist |
+| Webview XSS (e.g. via font names or AI markdown) | Strict Content-Security-Policy; no remote content; sanitised markdown; minimal Tauri capabilities; **no secrets in the webview** (until M3 the key crosses the webview once, when the user types it; ADR-009) |
+| API key theft | Key in the OS keychain; injected at the Rust egress; never logged; one allowlisted endpoint (OpenRouter's Messages API) with header, body-field and model checks. Accepted risks (ADR-009): webview script can replace or delete the stored key (until M3); a TLS-inspecting system proxy can see the key and the traffic (kept on purpose for corporate networks) |
 | Prompt injection via font data | Data labelled untrusted; E/D tools require confirmation; sandboxed writes; budgets |
 | Abuse of the MCP server | Off by default; localhost only; per-client tokens; sandboxed writes; read-only grants |
 | Update tampering | Signed updates (Tauri updater keys) + Authenticode/MSIX signing |
@@ -1527,7 +1549,7 @@ Estimates assume one developer working with AI assistance. Every milestone ends 
 
 | # | Milestone | Weeks | Scope | Exit criteria |
 |---|---|---|---|---|
-| M0 | Foundations & spikes | 3 | Repository and licensing setup; workspace scaffold (Cargo + pnpm + Tauri 2); CI with license gates; ADR-001…018; test corpus; `CLAUDE.md`; **four spikes (§18)** | CI green on Windows; typed IPC round-trip; spikes answered with ADRs |
+| M0 | Foundations & spikes | 3 | Repository and licensing setup; workspace scaffold (Cargo + pnpm + Tauri 2); CI with license gates; ADR-001…019; test corpus; `CLAUDE.md` (now `AGENTS.md`, which `CLAUDE.md` imports); **six spikes** (the four of §18, plus the boolean engine and persistent collections; M0 plan) | CI green on Windows; typed IPC round-trip; spikes answered with ADRs |
 | M1 | Headless engine | 4 | `tf-model`, `tf-engine` (actor, reducers, history, sandboxes, journal), `tf-commands` (~30 commands), `tf-io` (UFO/designspace + `.typefaced`), `tf-cli` (`info`, `convert`) | Byte-stable UFO round-trip on the corpus; undo/sandbox property tests green; ≥ 90% coverage |
 | M2 | Build pipeline | 5 | fontc integration (TTF, variable TTF), `tf-cff` + transplant (OTF), instancer, boolean engine, WOFF2, ttfautohint sidecar, preflight QA, build reports, differential tests | Corpus fonts build to TTF + OTF + WOFF2; OTF outlines verified; fontspector critical checks pass; export budgets met |
 | M3 | AI platform (headless) | 3 | Tool registry → Anthropic tools + MCP; `tf-mcp`; egress proxy + keychain; `@typefaced/ai` orchestrator (tool runner, streaming, validation); sandbox proposals; eval harness v0 (feature + metadata playbooks) | Claude Code (via MCP) and a minimal in-app chat can both add ligatures as a reviewable proposal; evals pass |
@@ -1581,18 +1603,20 @@ gantt
 |---|---|---|---|
 | R1 | fontations/fontc API churn (pre-1.0 crates, monthly breaking changes) | High / Medium | Pin versions; isolate behind `FontCompiler` and import ports; upgrade monthly as one unit with contract tests |
 | R2 | CFF writer bugs produce broken OTFs | Medium / High | The three-way verification (§5.8); differential tests against fontmake; a fontmake sidecar adapter as contingency behind the same port |
-| R3 | Canvas latency across IPC | Medium / High | Transient local previews + WASM kernel; the IPC benchmark in Spike 3; fallback: move hot interaction state further into the UI |
+| R3 | Canvas latency across IPC | Medium / High | Transient local previews + WASM kernel; binary payloads; asynchronous commits that the UI never waits for; layered drawing during gestures (§7.3). Spike 3 measured the WebView2 `invoke` floor at p95 7.1–9.0 ms, so the commit budget is now measured in Rust (§10.4). Fallback: move hot interaction state further into the UI |
 | R4 | AI glyph generation quality disappoints | Medium / High | Parametric backbone; visual critique loop; evals; human review; scope limited to basic Latin in 1.0 |
 | R5 | AI cost or privacy concerns deter users | Medium / Medium | Budgets and caching; opt-in; bring-your-own-key; gateway pricing decided before launch |
 | R6 | Recipe design needs type-design expertise | High / Medium | Small scope; recipes as data; paid review by a type designer; eval-driven iteration |
 | R7 | Solo-developer scope creep (the editor "graveyard") | High / High | Milestone gates; strict MVP scopes; ADRs; no new modules without an ADR |
 | R8 | GPL contamination via AI-generated code | Medium / High | License gates; clean-room rule in `CLAUDE.md`; code-review checklist |
-| R9 | tauri-specta is still a release candidate (2.0.0-rc.24) | Low / Medium | Pin it; fallback is `ts-rs` + generated invoke wrappers from our own registry |
-| R10 | Boolean engine robustness (linesweeper beta; skia-safe build weight) | Medium / Medium | `BooleanEngine` port with two adapters; choose by robustness corpus (Spike) |
+| R9 | tauri-specta is still a release candidate (pinned at `=2.0.0-rc.25`) | Low / Medium | Pin it; fallback is `ts-rs` + generated invoke wrappers from our own registry |
+| R10 | Boolean engine robustness (linesweeper is 0.x beta) | Medium / Medium | Spike 5 chose linesweeper `=0.4.0`: 0 failures on 581 cases. Rerun those cases on every upgrade; drop debris contours in the adapter; test that thin features survive (the area metric cannot show it). Fallback behind the same port: Skia `simplify` + an in-house direction pass |
 | R11 | Windows signing and SmartScreen | Medium / Medium | Microsoft Store MSIX + OV certificate; reputation builds over the beta |
 | R12 | WebKit canvas performance blocks macOS/Linux | Medium / Low (after 1.0) | Host-API abstraction keeps Electron possible as a fallback |
-| R13 | Claude API changes | Medium / Medium | Official SDK; config-driven model settings; eval regression suite; re-verify with the `claude-api` skill each quarter |
+| R13 | Claude API or OpenRouter API changes | Medium / Medium | Official SDK; app-side model routes in one place; eval regression suite; re-verify with the `claude-api` skill and OpenRouter's API reference each quarter; the egress allowlists make every new API feature a deliberate change |
 | R14 | Legal status of AI-generated designs; OFL rules | Low / High | Provenance; own recipes; Reserved Font Name checks; legal review before launch |
+| R15 | OpenRouter as a second party (added after Spike 4) | Medium / Medium | Prompts and font data go to whichever upstream provider OpenRouter selects; its availability and pricing also matter (it reserves credit for the full `max_tokens`). Controls: the user's OpenRouter privacy settings, now; whether to send `provider` data-collection or ZDR preferences is an open user decision; the `LlmClient` port keeps the provider swappable (ADR-009, accepted risk 3) |
+| R16 | Untrusted UFO input through norad (added after Spikes 1 and 5) | Medium / Medium | Two quick-xml advisories (RUSTSEC-2026-0194 and RUSTSEC-2026-0195) reach us through norad 0.18.4; they are ignored in `deny.toml` because the impact is denial of service on a crafted file. Remove the ignores when norad moves to quick-xml ≥ 0.41. Add limits on file size and parse time in `tf-io`. norad also rejects XML comments inside `<glyph>`, so the M1 UFO reader must decide how to handle them |
 
 ---
 
@@ -1607,7 +1631,7 @@ gantt
 | 005 | Native formats: UFO 3 + designspace 5, and the `.typefaced` package; `com.typefaced.*` lib keys |
 | 006 | Compiler: fontc in-process; fontmake as oracle and contingency |
 | 007 | CFF-based OTF via TTF → CFF transplant with `tf-cff` |
-| 008 | Boolean engine: skia-safe vs. linesweeper (from the spike) |
+| 008 | Boolean engine: linesweeper `=0.4.0` behind the `BooleanEngine` port (decided by Spike 5; Skia PathOps is the fallback) |
 | 009 | AI orchestration in TypeScript on the official SDK; Rust egress proxy + keychain |
 | 010 | AI edits as sandbox proposals with three-way merge |
 | 011 | Model configuration: app-side routes per task with OpenRouter fallbacks; changes gated by evals |
@@ -1616,7 +1640,7 @@ gantt
 | 014 | Studio and Workbench as workspace profiles over one engine |
 | 015 | Parametric glyph engine as the backbone of AI glyph generation |
 | 016 | Proprietary license, dependency policy and clean-room rule |
-| 017 | Persistent collections: `imbl` vs. an in-house chunked copy-on-write vector |
+| 017 | Persistent collections: `imbl` (glyph table `imbl::Vector<Arc<Glyph>>`), decided by Spike 6 over an in-house chunked copy-on-write vector |
 | 018 | Hinting: ttfautohint sidecar for TTF only in 1.0 |
 | 019 | Clean-room spacing algorithm from the published method |
 
@@ -1730,7 +1754,7 @@ The ADRs themselves live in [docs/adr/](adr/README.md).
 
 | Category | Licenses | Condition |
 |---|---|---|
-| **Allowed** | MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, BSL-1.0, Unicode-3.0 / Unicode-DFS-2016, CC0-1.0, Unlicense | Keep notices |
+| **Allowed** | MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, BSL-1.0, Unicode-3.0 / Unicode-DFS-2016, CC0-1.0, Unlicense | Keep notices |
 | **Allowed with conditions** | MPL-2.0 | Unmodified; file-level copyleft respected |
 | | FTL (FreeType License) | Credit in the documentation |
 | | OFL-1.1 | Fonts and assets only; license files kept |
@@ -1738,7 +1762,13 @@ The ADRs themselves live in [docs/adr/](adr/README.md).
 
 LGPL is excluded as the default so the policy stays simple.
 
-**Enforcement.** `cargo-deny` (`deny.toml`) and the npm license checker run in every PR. `xtask licenses` generates the third-party notices.
+**Added during M0** (each justified in a comment in `deny.toml`):
+- `Apache-2.0 WITH LLVM-exception` (Step 3.1): Apache-2.0 plus an exception that only adds permissions. Needed by `target-lexicon`, through `cfg-expr`, a Tauri build dependency.
+- `Unlicense` (Step 9.2, allowed by the user on 2026-10-05): a public-domain dedication with a permissive fallback and no conditions. Needed by the npm package `fast-sha256`, through `standardwebhooks`, a dependency of `@anthropic-ai/sdk`.
+
+**Not added.** libpng-2.0 and IJG are permissive but not on the list. They would be needed only if the Skia fallback of the boolean engine (§5.2) is ever adopted with the prebuilt Skia binaries.
+
+**Enforcement.** `cargo-deny` (`deny.toml`) and `cargo xtask licenses-npm` run in every PR (CI job `gates`). The `allow` list in `deny.toml` is the single list for Rust and npm. The third-party notices are generated per release (§11.3); that generator does not exist yet.
 
 ---
 
@@ -1785,3 +1815,25 @@ Use these for every change, especially when an AI assistant writes the code. The
 2. Add render snapshot tests at 3 parameter settings.
 3. Add consistency-metric thresholds.
 4. Add the recipe to its family's glyph-set manifest.
+
+---
+
+## Revision history
+
+| Date | Sections | Change | Source |
+|---|---|---|---|
+| 2026-10-14 | §1 | AI assumptions: Claude models reached through OpenRouter, with the user's own OpenRouter key | ADR-009 and ADR-011 amendments (user decision 2026-10-05); Spike 4 |
+| 2026-10-14 | §5.1 | Persistent collections decided: `imbl::Vector<Arc<Glyph>>` with tombstones; `imbl` maps for the other tables | Spike 6, ADR-017 |
+| 2026-10-14 | §5.2 | Boolean engine decided (linesweeper `=0.4.0`, Skia fallback); hit testing by bounding-box culling, R-tree only if needed; WASM size and loading | Spikes 3 and 5, ADR-008, ADR-013 |
+| 2026-10-14 | §5.8 | `tf-cff` built in-house (write-fonts and allsorts cannot write CFF 1 for a new font); width pair, missing FontInfo and operator folding; verification status | Spike 2, ADR-007 |
+| 2026-10-14 | §5.13 | fontc input rules (designspace 4, one shared `features.fea`, no comments in glyphs), panic capture, compile speed; transplant as built; overlap removal through linesweeper | Spikes 1, 2 and 5, ADR-006, ADR-007 |
+| 2026-10-14 | §5.18 | `tf-ai-host` forwards to OpenRouter | Spike 4, ADR-009 |
+| 2026-10-14 | §6.2 | SDK options confirmed; Ajv standalone validators in production; the egress forwards only what the client sends; the M0 key-entry exception and the accepted risks | Spike 4, ADR-009 |
+| 2026-10-14 | §7.2 | Asynchronous commits; binary payloads mandatory for outline data | Spike 3, ADR-002 |
+| 2026-10-14 | §7.3 | Layered frames during a gesture; the drag budget read against the display's cadence; no R-tree | Spike 3, ADR-013 |
+| 2026-10-14 | §10.4 | Commit budget restated: engine reducer + patch encode < 8 ms p95, measured in Rust; page-side round trip recorded, not gated. Drag budget read against the display's cadence | Spike 3, ADR-002 and ADR-013 *Acceptance* (2026-10-04) |
+| 2026-10-14 | §11.1 | Webview and key-theft rows: the M0 key-entry exception and the accepted risks | Spike 4, ADR-009 |
+| 2026-10-14 | §14 | M0 row: ADR-001…019 and six spikes, as M0 delivered them | M0 plan deviations 3 and 4; `docs/milestones/m0-exit.md` |
+| 2026-10-14 | §16 | ADR-008 and ADR-017 rows state the decisions the spikes made | Spikes 5 and 6 |
+| 2026-10-14 | §15 | R3, R10 and R13 updated; R15 (OpenRouter as a second party) and R16 (untrusted UFO input through norad) added; R9 corrected to the pinned `=2.0.0-rc.25` | Spikes 1, 3, 4 and 5; Step 2 |
+| 2026-10-14 | Appendix B | `Apache-2.0 WITH LLVM-exception` added to the allowed list (`Unlicense` was already there); M0 additions listed; libpng-2.0 and IJG noted as not added; enforcement names `cargo xtask licenses-npm` | `deny.toml`; M0 Steps 3.1 and 9.2 |

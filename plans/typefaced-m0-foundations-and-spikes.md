@@ -1,5 +1,7 @@
 # Blueprint: Typefaced M0 — Foundations & Spikes
 
+**Status: COMPLETE** (2026-10-14). Exit report: [docs/milestones/m0-exit.md](../docs/milestones/m0-exit.md).
+
 **Objective.** Carry out milestone M0 of [docs/implementation-plan.md](../docs/implementation-plan.md). When M0 is done, Typefaced has:
 - a licensed monorepo with CI and license gates;
 - a walking skeleton that proves the typed-IPC seam end to end;
@@ -46,7 +48,7 @@ After that, M1 (headless engine) can start.
 | 9.2 | Spike 4b — AI client and tool runner (TypeScript) (ADR-009) | 9.1 | strongest | 1 d | DONE (#14) |
 | 10 | Spike 5 — boolean engine (ADR-008) | 4, 5 | default | 1.5 d | DONE (#10) |
 | 11 | Spike 6 — persistent collections (ADR-017) | 4 | default | 1 d | DONE (#3) |
-| 12 | M0 exit review and handoff | all | strongest | 0.5 d | TODO |
+| 12 | M0 exit review and handoff | all | strongest | 0.5 d | DONE (#15) |
 
 **Tier:**
 - `strongest`: run with the most capable model available. Used where the step is correctness- or security-critical.
@@ -1373,3 +1375,5 @@ grep -l '^Status: Proposed' docs/adr/0*.md        # only ADRs of spikes marked S
 | 2026-10-05 | Step 9.2 dependency licence: `@anthropic-ai/sdk` 0.131.0 pulls in `fast-sha256` 1.3.0 (via `standardwebhooks`), licensed `Unlicense` (a public-domain dedication with a permissive fallback, OSI-approved, no conditions). `Unlicense` was added to the shared allow-list in `deny.toml`, because `cargo xtask licenses-npm` has no per-package exceptions. Added to Appendix B | Needed by the official SDK (ADR-0009); permissive | User (2026-10-05: allowed everywhere) |
 | 2026-10-05 | User decision 2026-10-05: OpenRouter + app-side routing. The client uses an OpenRouter API key through OpenRouter's Anthropic-compatible `POST /api/v1/messages` (`@anthropic-ai/sdk` kept, `baseURL` `https://openrouter.ai/api`). `tf-ai-host` (Step 9.1 code) changed in Step 9.2: only that endpoint on `https://openrouter.ai`, POST only, `Authorization: Bearer` injection, keychain account `openrouter-api-key`, no `anthropic-beta` header, OpenRouter extensions (`plugins`, `provider`, `models`, `route`, `session_id`, `trace`, `safeguards`, `metadata`, `user`) refused, `fallbacks` as `[{model}]` (at most 3), model IDs only `anthropic/<model>` without a `:variant` suffix (variants switch on OpenRouter features such as web search; no `openrouter/*` routers), a model required in every request, `max_tokens` at most 64000 and `thinking` only adaptive. Model routes per task in `packages/ai` (ADR-0011 amended). Dropped: Anthropic `fallbacks: "default"` and its beta, `eager_input_streaming`, `count_tokens`, `GET /models`. ADR-0009 amended (third accepted risk: prompts go to the upstream provider OpenRouter selects) | Provider choice; facts verified from OpenRouter's API reference (spike report) | User |
 | 2026-10-09 | Step 9.2 closed: the live smoke test (streamed answer, approved rename through OpenRouter) and the debug-build CSP check passed; ADR-0009 set to Accepted; the spike report filled in. A first 402 (OpenRouter reserves credit for the full `max_tokens`) was fixed by adding credits, not code | Manual checks of Step 9.2 | User |
+| 2026-10-14 | Step 12 drafted on branch `m0/12-exit`, status IN REVIEW. Written: `docs/milestones/m0-exit.md` (evidence for the three exit criteria, budgets, changed decisions, risks, carry-over, the proposed M1 blueprint); the spike outcomes folded into `docs/implementation-plan.md` (§1, §5.1, §5.2, §5.8, §5.13, §5.18, §6.2, §7.2, §7.3, §10.4, §11.1, §14, §15, §16, Appendix B), which gains a *Revision history*. Task 3 deviates from the brief: `AGENTS.md` (which `CLAUDE.md` imports) is not edited; the proposed diff waits for the user's approval. The `/ecc:project-init` dry run proposed 799 rule and skill files under `.claude/` and nothing for `AGENTS.md`, so it is not applied. The plan is marked COMPLETE only after the user has reviewed the exit report and the PR exists | Exit review; `AGENTS.md` changes need the user's approval | — |
+| 2026-10-14 | Step 12 closed: the user reviewed the exit report and approved the `AGENTS.md` diff (applied in #15); plan marked COMPLETE | User review of Step 12 | User |
