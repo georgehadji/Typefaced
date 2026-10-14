@@ -302,7 +302,9 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   └── geometry-wasm/
 │       ├── .gitignore
 │       └── package.json
-├── plans/typefaced-m0-foundations-and-spikes.md
+├── plans/
+│   ├── typefaced-m0-foundations-and-spikes.md
+│   └── typefaced-m1-headless-engine.md
 ├── spikes/
 │   ├── spike-boolean/
 │   │   ├── benches/engines.rs
