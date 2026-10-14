@@ -11,3 +11,4 @@ Project documentation. Up: [root CONTEXT.md](../CONTEXT.md).
 |---|---|
 | `adr/` | [CONTEXT.md](adr/CONTEXT.md): architecture decision records |
 | `spikes/` | [CONTEXT.md](spikes/CONTEXT.md): spike reports |
+| `milestones/` | [CONTEXT.md](milestones/CONTEXT.md): milestone exit reviews |
