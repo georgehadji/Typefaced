@@ -1,0 +1,35 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.removeAnchor`: remove one anchor.",
+  "properties": {
+    "id": {
+      "description": "The glyph.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "index": {
+      "description": "Anchor index.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "index",
+    "layer"
+  ],
+  "title": "GlyphRemoveAnchor",
+  "type": "object"
+}

@@ -1,0 +1,11 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`query.fontSummary`: names, sources, axes and glyph count.",
+  "required": [],
+  "title": "QueryFontSummary",
+  "type": "object"
+}

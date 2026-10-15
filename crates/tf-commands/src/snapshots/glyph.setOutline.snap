@@ -1,0 +1,68 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.setOutline`: replace the contours of one glyph layer.",
+  "properties": {
+    "id": {
+      "description": "The glyph.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "outline": {
+      "additionalProperties": false,
+      "description": "The new contours.",
+      "properties": {
+        "contourEnds": {
+          "description": "The index of the last point of each contour, strictly increasing; the last one is\nthe last point, so the contours cover every point.",
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "coords": {
+          "description": "Interleaved `[x0, y0, x1, y1, …]` in font units; finite.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "flags": {
+          "description": "One byte per point: the point type (`0` off-curve, `1` line, `2` curve,\n`3` qcurve) plus `4` for a smooth point.",
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "contourEnds",
+        "coords",
+        "flags"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "layer",
+    "outline"
+  ],
+  "title": "GlyphSetOutline",
+  "type": "object"
+}

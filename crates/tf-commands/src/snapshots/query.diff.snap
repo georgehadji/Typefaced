@@ -1,0 +1,21 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`query.diff`: the changes of a sandbox since it was forked.",
+  "properties": {
+    "sandbox": {
+      "description": "The sandbox.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "sandbox"
+  ],
+  "title": "QueryDiff",
+  "type": "object"
+}

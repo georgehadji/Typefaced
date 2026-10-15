@@ -1,0 +1,36 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`query.listGlyphs`: one page of glyphs in glyph order.",
+  "properties": {
+    "filter": {
+      "description": "Only glyphs whose name contains this text; `null` lists every glyph.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "limit": {
+      "description": "Largest number of glyphs to return.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "offset": {
+      "description": "Number of matching glyphs to skip.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "filter",
+    "limit",
+    "offset"
+  ],
+  "title": "QueryListGlyphs",
+  "type": "object"
+}

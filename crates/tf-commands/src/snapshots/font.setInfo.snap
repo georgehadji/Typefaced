@@ -1,0 +1,91 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`font.setInfo`: set or remove `fontinfo.plist` keys of one source.",
+  "properties": {
+    "fields": {
+      "description": "The keys to change.",
+      "items": {
+        "additionalProperties": false,
+        "description": "One `fontinfo.plist` key to set or remove.",
+        "properties": {
+          "key": {
+            "description": "The UFO key, e.g. `familyName` (the registry lists the accepted keys).",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "description": "A boolean.",
+                    "type": "boolean"
+                  },
+                  {
+                    "description": "An integer.",
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  {
+                    "description": "A real number.",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  {
+                    "description": "A string.",
+                    "type": "string"
+                  },
+                  {
+                    "description": "A list of integers (bit lists, Panose, family class).",
+                    "items": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "description": "A list of numbers (blue zones, stems).",
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "type": "array"
+                  }
+                ],
+                "description": "A `fontinfo.plist` value: a boolean, an integer, a real number, a string or a list\nof numbers."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The new value; `null` removes the key."
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "source": {
+      "description": "The source; `null` means the default source.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "fields",
+    "source"
+  ],
+  "title": "FontSetInfo",
+  "type": "object"
+}

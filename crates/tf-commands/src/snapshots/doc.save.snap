@@ -1,0 +1,11 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`doc.save`: save the document where it was opened from.",
+  "required": [],
+  "title": "DocSave",
+  "type": "object"
+}

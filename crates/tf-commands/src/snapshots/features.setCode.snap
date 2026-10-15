@@ -1,0 +1,29 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`features.setCode`: replace the `features.fea` text of one source.",
+  "properties": {
+    "source": {
+      "description": "The source; `null` means the default source.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "text": {
+      "description": "The OpenType feature code.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "text"
+  ],
+  "title": "FeaturesSetCode",
+  "type": "object"
+}

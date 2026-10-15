@@ -11,11 +11,16 @@ description = "Typed command catalog: the API contract shared by the UI, AI, MCP
 layer = "application"
 
 [dependencies]
+schemars = { workspace = true }
 serde = { workspace = true }
+serde_json = "1"
 specta = { workspace = true }
+tf-geometry = { path = "../tf-geometry" }
+thiserror = { workspace = true }
 
 [dev-dependencies]
-serde_json = "1"
+insta = { workspace = true, features = ["json"] }
+proptest = "1"
 
 [lints]
 workspace = true

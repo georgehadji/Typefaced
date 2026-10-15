@@ -1,0 +1,25 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`doc.new`: create a document from a template.",
+  "properties": {
+    "template": {
+      "description": "The template.",
+      "oneOf": [
+        {
+          "const": "blank",
+          "description": "One source, 1000 units per em, glyphs `.notdef` and `space`.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "required": [
+    "template"
+  ],
+  "title": "DocNew",
+  "type": "object"
+}

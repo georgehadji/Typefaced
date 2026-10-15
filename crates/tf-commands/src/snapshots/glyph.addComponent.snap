@@ -1,0 +1,79 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.addComponent`: add a component that refers to another glyph by name.",
+  "properties": {
+    "base": {
+      "description": "Name of the base glyph.",
+      "type": "string"
+    },
+    "id": {
+      "description": "The glyph.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "transform": {
+      "additionalProperties": false,
+      "description": "Placement of the base glyph.",
+      "properties": {
+        "dx": {
+          "description": "`xOffset`, in font units.",
+          "format": "double",
+          "type": "number"
+        },
+        "dy": {
+          "description": "`yOffset`, in font units.",
+          "format": "double",
+          "type": "number"
+        },
+        "xx": {
+          "description": "`xScale`.",
+          "format": "double",
+          "type": "number"
+        },
+        "xy": {
+          "description": "`xyScale`.",
+          "format": "double",
+          "type": "number"
+        },
+        "yx": {
+          "description": "`yxScale`.",
+          "format": "double",
+          "type": "number"
+        },
+        "yy": {
+          "description": "`yScale`.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dx",
+        "dy",
+        "xx",
+        "xy",
+        "yx",
+        "yy"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "base",
+    "id",
+    "layer",
+    "transform"
+  ],
+  "title": "GlyphAddComponent",
+  "type": "object"
+}

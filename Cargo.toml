@@ -14,12 +14,14 @@ publish = false
 # `features`. Pre-1.0 font crates are pinned exactly; upgrade them together (ADR-0006).
 imbl = "=7.0.2"
 indexmap = "2"
+insta = { version = "1.49.0", default-features = false }
 kurbo = "=0.13.1"
 # Each member chooses its own norad features (tf-compile: `kurbo`). tf-io (M1 Step 9) needs
 # `object-libs` to give an object a lib (`replace_lib`); it pulls `uuid` (`v4`), whose
 # licence `cargo deny check` must accept in that step.
 norad = { version = "=0.18.4", default-features = false }
 proptest = "1"
+schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = "1"

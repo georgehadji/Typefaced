@@ -1,0 +1,72 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.insertPoint`: insert a point into a contour.",
+  "properties": {
+    "contour": {
+      "description": "The contour index.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "id": {
+      "description": "The glyph.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "index": {
+      "description": "The position inside the contour; the point is inserted before it.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "point": {
+      "additionalProperties": false,
+      "description": "The new point.",
+      "properties": {
+        "flags": {
+          "description": "Point flags: 0 off-curve, 1 line, 2 curve, 3 qcurve, plus 4 for a smooth point.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "x": {
+          "description": "X in font units.",
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "description": "Y in font units.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "flags",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contour",
+    "id",
+    "index",
+    "layer",
+    "point"
+  ],
+  "title": "GlyphInsertPoint",
+  "type": "object"
+}

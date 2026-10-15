@@ -70,7 +70,8 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | `crates/tf-cff/src/` | [CONTEXT.md](crates/tf-cff/src/CONTEXT.md) | Builder, charstring encoder, byte encodings |
 | `crates/tf-cff/tests/` | [CONTEXT.md](crates/tf-cff/tests/CONTEXT.md) | Tables built and read back with read-fonts and skrifa |
 | `crates/tf-commands/` | [CONTEXT.md](crates/tf-commands/CONTEXT.md) | Typed command catalog crate (application layer) |
-| `crates/tf-commands/src/` | [CONTEXT.md](crates/tf-commands/src/CONTEXT.md) | Command and payload types |
+| `crates/tf-commands/src/` | [CONTEXT.md](crates/tf-commands/src/CONTEXT.md) | Commands, queries, registry, error codes, packed-outline codecs |
+| `crates/tf-commands/src/snapshots/` | [CONTEXT.md](crates/tf-commands/src/snapshots/CONTEXT.md) | insta snapshots of the command and query schemas |
 | `crates/tf-compile/` | [CONTEXT.md](crates/tf-compile/CONTEXT.md) | Font compiler crate (adapter layer): UFO and designspace to TTF through fontc; TTF to OTF |
 | `crates/tf-compile/src/` | [CONTEXT.md](crates/tf-compile/src/CONTEXT.md) | Compile functions, OTF transplant, source outline reader, error type |
 | `crates/tf-compile/examples/` | [CONTEXT.md](crates/tf-compile/examples/CONTEXT.md) | Timing programs for Spikes 1 and 2 |
@@ -227,7 +228,51 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   ├── tests/read_back.rs
 │   │   └── Cargo.toml
 │   ├── tf-commands/
-│   │   ├── src/lib.rs
+│   │   ├── src/
+│   │   │   ├── snapshots/
+│   │   │   │   ├── doc.close.snap
+│   │   │   │   ├── doc.new.snap
+│   │   │   │   ├── doc.open.snap
+│   │   │   │   ├── doc.redo.snap
+│   │   │   │   ├── doc.save.snap
+│   │   │   │   ├── doc.saveAs.snap
+│   │   │   │   ├── doc.undo.snap
+│   │   │   │   ├── features.setCode.snap
+│   │   │   │   ├── font.setInfo.snap
+│   │   │   │   ├── font.setVerticalMetrics.snap
+│   │   │   │   ├── glyph.addAnchor.snap
+│   │   │   │   ├── glyph.addComponent.snap
+│   │   │   │   ├── glyph.create.snap
+│   │   │   │   ├── glyph.decompose.snap
+│   │   │   │   ├── glyph.delete.snap
+│   │   │   │   ├── glyph.deletePoints.snap
+│   │   │   │   ├── glyph.duplicate.snap
+│   │   │   │   ├── glyph.insertPoint.snap
+│   │   │   │   ├── glyph.moveAnchor.snap
+│   │   │   │   ├── glyph.movePoints.snap
+│   │   │   │   ├── glyph.removeAnchor.snap
+│   │   │   │   ├── glyph.removeComponent.snap
+│   │   │   │   ├── glyph.rename.snap
+│   │   │   │   ├── glyph.setCodepoints.snap
+│   │   │   │   ├── glyph.setOutline.snap
+│   │   │   │   ├── glyph.setWidth.snap
+│   │   │   │   ├── glyph.toggleSmooth.snap
+│   │   │   │   ├── glyph.transform.snap
+│   │   │   │   ├── kerning.removePairs.snap
+│   │   │   │   ├── kerning.setGroup.snap
+│   │   │   │   ├── kerning.setPairs.snap
+│   │   │   │   ├── query.diff.snap
+│   │   │   │   ├── query.features.snap
+│   │   │   │   ├── query.fontSummary.snap
+│   │   │   │   ├── query.getGlyph.snap
+│   │   │   │   ├── query.kerning.snap
+│   │   │   │   └── query.listGlyphs.snap
+│   │   │   ├── command.rs
+│   │   │   ├── error.rs
+│   │   │   ├── lib.rs
+│   │   │   ├── packed.rs
+│   │   │   ├── query.rs
+│   │   │   └── registry.rs
 │   │   └── Cargo.toml
 │   ├── tf-compile/
 │   │   ├── examples/

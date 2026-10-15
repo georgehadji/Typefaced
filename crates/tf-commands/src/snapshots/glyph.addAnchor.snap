@@ -1,0 +1,45 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.addAnchor`: add a named anchor.",
+  "properties": {
+    "id": {
+      "description": "The glyph.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "name": {
+      "description": "Anchor name, e.g. `top`.",
+      "type": "string"
+    },
+    "x": {
+      "description": "X in font units.",
+      "format": "double",
+      "type": "number"
+    },
+    "y": {
+      "description": "Y in font units.",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "id",
+    "layer",
+    "name",
+    "x",
+    "y"
+  ],
+  "title": "GlyphAddAnchor",
+  "type": "object"
+}
