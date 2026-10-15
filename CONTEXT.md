@@ -40,6 +40,7 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | AI egress: API key storage, request policy, streaming proxy | `crates/tf-ai-host/src/` → `apps/desktop/src-tauri/src/ai.rs` |
 | AI client in the webview (SDK, custom fetch, tools) | `packages/ai/src/` |
 | Domain model of a font project; where each norad field lives | `crates/tf-model/src/lib.rs` |
+| Boolean operations (remove overlap, union, intersection, difference) | `crates/tf-geometry/src/boolean.rs` (port) → `crates/tf-boolean/src/lib.rs` (linesweeper) |
 | Geometry kernel (hit testing, point edits) | `crates/tf-geometry/src/lib.rs` → `crates/tf-wasm/src/lib.rs` → `packages/geometry-wasm` |
 | UI code | `apps/desktop/src/` |
 | Repository gates (layering, licenses, coverage, corpus) | `xtask/src/` |
@@ -66,6 +67,11 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | `crates/` | [CONTEXT.md](crates/CONTEXT.md) | Rust library crates of the engine |
 | `crates/tf-ai-host/` | [CONTEXT.md](crates/tf-ai-host/CONTEXT.md) | AI egress host crate (adapter layer): API key in the OS keychain, streaming proxy to OpenRouter's Messages API |
 | `crates/tf-ai-host/src/` | [CONTEXT.md](crates/tf-ai-host/src/CONTEXT.md) | Vault, egress policy, body check, egress host, usage ledger, test server |
+| `crates/tf-boolean/` | [CONTEXT.md](crates/tf-boolean/CONTEXT.md) | Boolean engine crate (adapter layer): linesweeper behind the `BooleanEngine` port, regression corpus |
+| `crates/tf-boolean/benches/` | [CONTEXT.md](crates/tf-boolean/benches/CONTEXT.md) | Timing of remove-overlap, intersection and difference |
+| `crates/tf-boolean/src/` | [CONTEXT.md](crates/tf-boolean/src/CONTEXT.md) | The linesweeper adapter and debris filter |
+| `crates/tf-boolean/tests/` | [CONTEXT.md](crates/tf-boolean/tests/CONTEXT.md) | Regression corpus, thin-feature, debris and property tests |
+| `crates/tf-boolean/tests/common/` | [CONTEXT.md](crates/tf-boolean/tests/common/CONTEXT.md) | Case set and scanline oracle |
 | `crates/tf-cff/` | [CONTEXT.md](crates/tf-cff/CONTEXT.md) | CFF writer crate (domain layer): cubic outlines to a `CFF ` table |
 | `crates/tf-cff/src/` | [CONTEXT.md](crates/tf-cff/src/CONTEXT.md) | Builder, charstring encoder, byte encodings |
 | `crates/tf-cff/tests/` | [CONTEXT.md](crates/tf-cff/tests/CONTEXT.md) | Tables built and read back with read-fonts and skrifa |
@@ -220,6 +226,17 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   │   ├── test_server.rs
 │   │   │   └── vault.rs
 │   │   └── Cargo.toml
+│   ├── tf-boolean/
+│   │   ├── benches/ops.rs
+│   │   ├── src/lib.rs
+│   │   ├── tests/
+│   │   │   ├── common/
+│   │   │   │   ├── cases.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   └── oracle.rs
+│   │   │   ├── properties.rs
+│   │   │   └── regression.rs
+│   │   └── Cargo.toml
 │   ├── tf-cff/
 │   │   ├── src/
 │   │   │   ├── encode.rs
@@ -291,7 +308,9 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   └── Cargo.toml
 │   ├── tf-geometry/
 │   │   ├── benches/hit_test.rs
-│   │   ├── src/lib.rs
+│   │   ├── src/
+│   │   │   ├── boolean.rs
+│   │   │   └── lib.rs
 │   │   └── Cargo.toml
 │   ├── tf-model/
 │   │   ├── benches/
