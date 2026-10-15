@@ -1,0 +1,43 @@
+[package]
+name = "tf-model"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Domain model of a font project on persistent collections (implementation plan §5.1, ADR-0017)"
+
+[package.metadata.typefaced]
+layer = "domain"
+
+[lib]
+# `cargo bench` runs only the two timing programs below, not the unit tests.
+bench = false
+
+[features]
+# Proptest generators for other crates' property tests (`tf_model::testing`).
+testing = ["dep:proptest"]
+
+[dependencies]
+# MPL-2.0: used unmodified, never patched or vendored (ADR-0017, Appendix B).
+imbl = { workspace = true }
+indexmap = { workspace = true }
+proptest = { workspace = true, optional = true }
+smallvec = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+# Plain timing loops (M1 deviation 10); `cargo bench -p tf-model` runs both and exits
+# with status 1 when a budget fails.
+[[bench]]
+name = "glyph_table"
+harness = false
+
+[[bench]]
+name = "kerning"
+harness = false
+
+[lints]
+workspace = true

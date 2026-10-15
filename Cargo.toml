@@ -10,7 +10,17 @@ license = "LicenseRef-Proprietary"
 publish = false
 
 [workspace.dependencies]
+# Shared versions (M1 Step 1). Members use `name = { workspace = true }` plus their own
+# `features`. Pre-1.0 font crates are pinned exactly; upgrade them together (ADR-0006).
+imbl = "=7.0.2"
+indexmap = "2"
+kurbo = "=0.13.1"
+# Each member chooses its own norad features (tf-compile: `kurbo`).
+norad = { version = "=0.18.4", default-features = false }
+proptest = "1"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smallvec = "1"
 # tauri-specta is a release candidate: specta must match its exact version.
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 thiserror = "2"
@@ -29,3 +39,9 @@ codegen-units = 1
 lto = true
 opt-level = 3
 strip = true
+
+# Benchmarks build without LTO so the CI `windows` job stays inside its timeout (M1
+# deviation 10). Numbers without LTO are conservative.
+[profile.bench]
+lto = false
+codegen-units = 16

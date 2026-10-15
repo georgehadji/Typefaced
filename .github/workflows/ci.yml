@@ -48,6 +48,9 @@ jobs:
           cargo clippy -p typefaced-desktop --all-targets --features bench --locked -- -D warnings
           cargo test -p typefaced-desktop --features bench --locked bench::
       - run: cargo test --workspace --locked
+      # Glyph-table and kerning budgets (50 µs p95) on CI hardware; exits 1 when one fails.
+      - name: Model benchmarks
+        run: cargo bench -p tf-model --locked
       - name: Bindings are up to date
         run: git diff --exit-code packages/bindings
       - run: pnpm lint && pnpm typecheck && pnpm test:ci

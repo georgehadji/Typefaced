@@ -12,7 +12,7 @@ layer = "domain"
 
 [dependencies]
 # Same exact versions as fontc 1.0.0's tree (tf-compile); upgrade them together.
-kurbo = "=0.13.1"
+kurbo = { workspace = true }
 # Only for the CFF standard strings table (TN #5176 Appendix A), through `ps::string::Sid`.
 read-fonts = "=0.43.3"
 thiserror = { workspace = true }

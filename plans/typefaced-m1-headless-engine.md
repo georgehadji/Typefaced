@@ -37,7 +37,7 @@ After that, M2 (build pipeline) can start.
 
 | Step | Title | Depends on | Tier | Effort | Status |
 |---|---|---|---|---|---|
-| 1 | `tf-model`: domain model, glyph table, benchmarks | — | strongest | 2 d | TODO |
+| 1 | `tf-model`: domain model, glyph table, benchmarks | — | strongest | 2 d | IN REVIEW (branch m1/01-model) |
 | 2 | `tf-boolean`: linesweeper adapter and regression corpus | — | default | 1.5 d | TODO |
 | 3 | `tf-commands`: command catalog v1 and packed outlines | — | default | 1.5 d | TODO |
 | 4 | `tf-engine` core: document, reducer dispatch, history | 1, 3 | strongest | 2 d | TODO |

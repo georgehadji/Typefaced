@@ -15,8 +15,8 @@ layer = "adapter"
 # pin exact versions and upgrade them together (ADR-0006). No `cli` feature: no clap.
 fontc = { version = "=1.0.0", default-features = false, features = ["rayon"] }
 # The versions in fontc 1.0.0's tree. write-fonts re-exports read-fonts as `read`.
-kurbo = "=0.13.1"
-norad = { version = "=0.18.4", default-features = false, features = ["kurbo"] }
+kurbo = { workspace = true }
+norad = { workspace = true, features = ["kurbo"] }
 tf-cff = { path = "../tf-cff" }
 thiserror = { workspace = true }
 write-fonts = "=0.52.0"
