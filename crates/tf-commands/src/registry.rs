@@ -437,7 +437,8 @@ pub fn query(id: QueryId) -> Descriptor {
 }
 
 /// The value type of a `fontinfo.plist` key, as norad 0.18.4's `FontInfo` holds it.
-/// Step 5 checks values against it, and the ranges and enumerations of the UFO spec.
+/// Step 5 converts an `InfoValue` by it (see `InfoValue` for why the serde variant is
+/// not enough) and checks the ranges and enumerations of the UFO spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfoValueType {
     /// A string.
@@ -579,7 +580,12 @@ fn close_object(schema: &mut Schema) {
     let Some(object) = schema.as_object_mut() else {
         return;
     };
-    if !object.get("type").is_some_and(allows_object) {
+    // A map (`additionalProperties` given as a schema) stays open.
+    if !object.get("type").is_some_and(allows_object)
+        || object
+            .get("additionalProperties")
+            .is_some_and(Value::is_object)
+    {
         return;
     }
     let mut keys: Vec<String> = object

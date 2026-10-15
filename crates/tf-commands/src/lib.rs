@@ -23,7 +23,7 @@ macro_rules! catalog {
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, specta::Type, schemars::JsonSchema)]
-        #[serde(tag = "id", content = "args")]
+        #[serde(tag = "id", content = "args", deny_unknown_fields)]
         pub enum $enum {
             $( $(#[$vmeta])* #[serde(rename = $id)] $variant($payload), )*
         }
@@ -55,6 +55,16 @@ macro_rules! catalog {
                 match self { $($enum::$variant(_) => $id_enum::$variant,)* }
             }
         }
+    };
+}
+
+/// Declares a `u32` id newtype that is a plain integer on the wire.
+macro_rules! id_type {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize, specta::Type, schemars::JsonSchema)]
+        #[serde(transparent)]
+        pub struct $name(pub u32);
     };
 }
 

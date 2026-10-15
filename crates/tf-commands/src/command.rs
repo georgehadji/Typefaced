@@ -11,16 +11,6 @@ use specta::Type;
 
 use crate::packed::PackedOutline;
 
-/// Declares a `u32` id newtype that is a plain integer on the wire.
-macro_rules! id_type {
-    ($(#[$meta:meta])* $name:ident) => {
-        $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Type, JsonSchema)]
-        #[serde(transparent)]
-        pub struct $name(pub u32);
-    };
-}
-
 id_type!(
     /// A glyph in the document's glyph table.
     GlyphId
@@ -112,6 +102,12 @@ pub enum KerningSide {
 
 /// A `fontinfo.plist` value: a boolean, an integer, a real number, a string or a list
 /// of numbers.
+//
+// Not a doc comment, so it stays out of the schema: the variant serde picks says little
+// about the key. JSON `400.0` arrives as `400` (`Integer`), `[]` as `IntegerList`, and
+// integers above `i32::MAX` as `Number`. Step 5 converts the value by the key's
+// `InfoValueType` (an integral number is accepted for an integer key; either list
+// variant for a list key).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, JsonSchema)]
 #[serde(untagged)]
 pub enum InfoValue {
@@ -285,6 +281,9 @@ pub struct GlyphSetOutline {
 }
 
 /// `glyph.movePoints`: move points to absolute positions.
+//
+// Serde does not validate the JSON form: the reducer calls `validate` (in `packed.rs`);
+// the binary `decode` validates on its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GlyphMovePoints {
@@ -605,9 +604,12 @@ mod tests {
 
     #[test]
     fn unknown_fields_are_refused() {
-        let json = json!({ "id": "glyph.rename", "args": { "id": 3, "name": "a", "extra": 1 } });
+        let inside = json!({ "id": "glyph.rename", "args": { "id": 3, "name": "a", "extra": 1 } });
+        let outside = json!({ "id": "doc.save", "args": {}, "extra": 1 });
 
-        assert!(serde_json::from_value::<Command>(json).is_err());
+        assert!(serde_json::from_value::<Command>(inside).is_err());
+        assert!(serde_json::from_value::<Command>(outside).is_err());
+        assert!(serde_json::from_value::<Command>(json!({ "id": "doc.save", "args": {} })).is_ok());
     }
 
     #[test]

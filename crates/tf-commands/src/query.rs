@@ -11,10 +11,10 @@ use crate::command::{
 };
 use crate::packed::PackedOutline;
 
-/// An AI or MCP sandbox (ADR-0010).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type, JsonSchema)]
-#[serde(transparent)]
-pub struct SandboxId(pub u32);
+id_type!(
+    /// An AI or MCP sandbox (ADR-0010).
+    SandboxId
+);
 
 /// The optional parts of a glyph layer that `query.getGlyph` returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, JsonSchema)]

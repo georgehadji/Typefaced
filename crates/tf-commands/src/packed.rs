@@ -21,6 +21,9 @@ const VALID_FLAG_BITS: u8 = flags::TYPE_MASK | flags::SMOOTH;
 
 /// An outline as three parallel arrays, the layout the UI holds in typed arrays.
 /// Contours are closed; `contour_ends` holds the index of each contour's last point.
+//
+// Serde does not validate the JSON form: whoever receives one (the reducers) calls
+// `validate` first. `decode` validates on its own.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Type, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackedOutline {
@@ -90,7 +93,11 @@ pub enum PackedError {
 
 impl From<PackedError> for CommandError {
     fn from(error: PackedError) -> Self {
-        CommandError::new(ErrorCode::InvalidOutline, error.to_string())
+        let code = match error {
+            PackedError::TooManyPoints(_) => ErrorCode::LimitExceeded,
+            _ => ErrorCode::InvalidOutline,
+        };
+        CommandError::new(code, error.to_string())
     }
 }
 
@@ -588,6 +595,23 @@ mod tests {
             let bytes = command.encode().unwrap();
 
             prop_assert_eq!(GlyphMovePoints::decode(&bytes).unwrap(), command);
+        }
+
+        #[test]
+        fn arbitrary_bodies_of_the_right_length_never_panic(
+            n in 0usize..16,
+            c in 0usize..16,
+            seed in prop::collection::vec(any::<u8>(), 0..512),
+        ) {
+            let size = outline_size(n, c).unwrap();
+            let mut bytes = Vec::with_capacity(size);
+            bytes.extend_from_slice(&(n as u32).to_le_bytes());
+            bytes.extend_from_slice(&(c as u32).to_le_bytes());
+            bytes.extend((0..size - 8).map(|i| seed.get(i).copied().unwrap_or(0)));
+
+            if let Ok(decoded) = PackedOutline::decode(&bytes) {
+                prop_assert_eq!(decoded.encode().unwrap(), bytes);
+            }
         }
 
         #[test]
