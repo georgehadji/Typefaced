@@ -2,10 +2,11 @@
 //! can still produce.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use crate::{
-    ContourError, GlyphId, GlyphLayer, LayerId, LibDict, ModelError, Name, OBJECT_LIBS_KEY, Point,
-    PointKind,
+    ContourError, FontInfo, GlyphId, GlyphLayer, Identifier, LayerId, LibDict, ModelError, Name,
+    OBJECT_LIBS_KEY, ObjectOwner, Point, PointKind, SourceId, keys,
 };
 
 /// Checks a contour's point sequence against the UFO rules, as norad 0.18.4 does on load:
@@ -83,21 +84,56 @@ pub fn check_glyph_layer(
             codepoint,
         });
     }
-    let identifiers = data
+    let objects = data
         .contours
         .iter()
-        .flat_map(|c| std::iter::once(&c.identifier).chain(c.points.iter().map(|p| &p.identifier)))
-        .chain(data.components.iter().map(|c| &c.identifier))
-        .chain(data.anchors.iter().map(|a| &a.identifier))
-        .chain(data.guidelines.iter().map(|g| &g.identifier))
-        .flatten();
+        .flat_map(|c| {
+            std::iter::once((&c.identifier, &c.lib))
+                .chain(c.points.iter().map(|p| (&p.identifier, &p.lib)))
+        })
+        .chain(data.components.iter().map(|c| (&c.identifier, &c.lib)))
+        .chain(data.anchors.iter().map(|a| (&a.identifier, &a.lib)))
+        .chain(data.guidelines.iter().map(|g| (&g.identifier, &g.lib)));
+    check_objects(objects, || ObjectOwner::GlyphLayer {
+        glyph: glyph.clone(),
+        layer,
+    })
+}
+
+/// Checks a source's font info: no `guidelines` key in `fields`, and the guidelines follow
+/// the object rules (unique identifiers, a lib only with an identifier).
+pub fn check_font_info(source: SourceId, info: &FontInfo) -> Result<(), ModelError> {
+    if info.fields.contains_key(keys::GUIDELINES) {
+        return Err(ModelError::ReservedKey(keys::GUIDELINES.to_owned()));
+    }
+    let objects = info
+        .guidelines
+        .iter()
+        .flatten()
+        .map(|g| (&g.identifier, &g.lib));
+    check_objects(objects, || ObjectOwner::FontInfo(source))
+}
+
+/// The identified objects of one owner: identifiers are unique, and an object with a lib has
+/// an identifier (norad keys object libs by it).
+fn check_objects<'a>(
+    objects: impl Iterator<Item = (&'a Option<Identifier>, &'a Option<Arc<LibDict>>)>,
+    owner: impl Fn() -> ObjectOwner,
+) -> Result<(), ModelError> {
     let mut seen = HashSet::new();
-    if let Some(identifier) = identifiers.into_iter().find(|&i| !seen.insert(i)) {
-        return Err(ModelError::DuplicateIdentifier {
-            glyph: glyph.clone(),
-            layer,
-            identifier: identifier.clone(),
-        });
+    for (identifier, lib) in objects {
+        match identifier {
+            Some(identifier) if !seen.insert(identifier) => {
+                return Err(ModelError::DuplicateIdentifier {
+                    owner: owner(),
+                    identifier: identifier.clone(),
+                });
+            }
+            None if lib.is_some() => {
+                return Err(ModelError::ObjectLibWithoutIdentifier { owner: owner() });
+            }
+            _ => {}
+        }
     }
     Ok(())
 }
@@ -124,9 +160,7 @@ pub enum Warning {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        Anchor, Component, Contour, Guideline, Identifier, LibValue, Line, PointKind, Transform,
-    };
+    use crate::{Anchor, Component, Contour, Guideline, LibValue, Line, Transform};
     use PointKind::{Curve, Line as L, Move, OffCurve as Off, QCurve};
 
     fn contour(kinds: &[PointKind]) -> Vec<Point> {
@@ -256,8 +290,10 @@ mod tests {
         assert_eq!(
             check_glyph_layer(&glyph, LayerId(0), &duplicate_ids),
             Err(ModelError::DuplicateIdentifier {
-                glyph: glyph.clone(),
-                layer: LayerId(0),
+                owner: ObjectOwner::GlyphLayer {
+                    glyph: glyph.clone(),
+                    layer: LayerId(0)
+                },
                 identifier: Identifier::new("x").unwrap()
             })
         );
@@ -297,7 +333,119 @@ mod tests {
             Err(ModelError::ReservedKey(OBJECT_LIBS_KEY.into()))
         );
         let glyph = Name::new("A").unwrap();
-        let layer = layer_with(|l| l.lib = lib.clone());
+        let layer = layer_with(|l| l.lib = Arc::new(lib.clone()));
         assert!(check_glyph_layer(&glyph, LayerId(0), &layer).is_err());
+    }
+
+    fn object_lib() -> Option<Arc<LibDict>> {
+        let mut lib = LibDict::new();
+        lib.insert("com.example.mark".into(), LibValue::Boolean(true));
+        Some(Arc::new(lib))
+    }
+
+    fn guideline(identifier: Option<Identifier>, lib: Option<Arc<LibDict>>) -> Guideline {
+        Guideline {
+            line: Line::Horizontal(0.0),
+            name: None,
+            color: None,
+            identifier,
+            lib,
+        }
+    }
+
+    /// norad saves object libs keyed by identifier and unwraps it, so every object with a lib
+    /// needs an identifier. Checked for each object kind.
+    #[test]
+    fn object_libs_need_an_identifier() {
+        let glyph = Name::new("A").unwrap();
+        let owner = ObjectOwner::GlyphLayer {
+            glyph: glyph.clone(),
+            layer: LayerId(0),
+        };
+        let refused = |layer: GlyphLayer| {
+            assert_eq!(
+                check_glyph_layer(&glyph, LayerId(0), &layer),
+                Err(ModelError::ObjectLibWithoutIdentifier {
+                    owner: owner.clone()
+                })
+            );
+        };
+        refused(layer_with(|l| {
+            let mut c = Contour::new(contour(&[L, L, L]));
+            c.lib = object_lib();
+            l.contours.push(c);
+        }));
+        refused(layer_with(|l| {
+            let mut c = Contour::new(contour(&[L, L, L]));
+            c.points[1].lib = object_lib();
+            l.contours.push(c);
+        }));
+        refused(layer_with(|l| {
+            l.components.push(Component {
+                base: Name::new("B").unwrap(),
+                transform: Transform::default(),
+                identifier: None,
+                lib: object_lib(),
+            });
+        }));
+        refused(layer_with(|l| {
+            l.anchors.push(Anchor {
+                x: 0.0,
+                y: 0.0,
+                name: None,
+                color: None,
+                identifier: None,
+                lib: object_lib(),
+            });
+        }));
+        refused(layer_with(|l| {
+            l.guidelines.push(guideline(None, object_lib()))
+        }));
+        // With an identifier, the lib is fine.
+        let ok = layer_with(|l| l.guidelines.push(guideline(id("g"), object_lib())));
+        assert_eq!(check_glyph_layer(&glyph, LayerId(0), &ok), Ok(()));
+    }
+
+    /// norad's `FontInfo::validate` refuses duplicate guideline identifiers on save.
+    #[test]
+    fn font_info_guidelines_need_unique_identifiers_and_ids_for_libs() {
+        let owner = ObjectOwner::FontInfo(SourceId(3));
+        let with = |guidelines: Vec<Guideline>| FontInfo {
+            guidelines: Some(guidelines),
+            ..FontInfo::default()
+        };
+        assert_eq!(check_font_info(SourceId(3), &FontInfo::default()), Ok(()));
+        assert_eq!(
+            check_font_info(
+                SourceId(3),
+                &with(vec![
+                    guideline(id("a"), object_lib()),
+                    guideline(None, None)
+                ])
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            check_font_info(
+                SourceId(3),
+                &with(vec![guideline(id("a"), None), guideline(id("a"), None)])
+            ),
+            Err(ModelError::DuplicateIdentifier {
+                owner: owner.clone(),
+                identifier: Identifier::new("a").unwrap()
+            })
+        );
+        assert_eq!(
+            check_font_info(SourceId(3), &with(vec![guideline(None, object_lib())])),
+            Err(ModelError::ObjectLibWithoutIdentifier { owner })
+        );
+        let mut reserved = FontInfo::default();
+        reserved
+            .fields
+            .insert(crate::keys::GUIDELINES.into(), LibValue::Array(Vec::new()));
+        assert_eq!(
+            check_font_info(SourceId(3), &reserved),
+            Err(ModelError::ReservedKey(crate::keys::GUIDELINES.into()))
+        );
     }
 }

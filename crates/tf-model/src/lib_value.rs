@@ -37,6 +37,7 @@ impl LibValue {
         }
     }
 
+    /// The value as text, for `String`.
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::String(value) => Some(value),

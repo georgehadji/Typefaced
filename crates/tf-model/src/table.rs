@@ -20,6 +20,7 @@ pub struct GlyphTable {
 }
 
 impl GlyphTable {
+    /// An empty table.
     pub fn new() -> Self {
         Self::default()
     }
@@ -29,6 +30,7 @@ impl GlyphTable {
         self.by_name.len()
     }
 
+    /// Whether no glyph is live.
     pub fn is_empty(&self) -> bool {
         self.by_name.is_empty()
     }
@@ -38,10 +40,12 @@ impl GlyphTable {
         self.slots.len()
     }
 
+    /// The live glyph with this ID; `None` for a tombstone or an unknown ID.
     pub fn get(&self, id: GlyphId) -> Option<&Arc<Glyph>> {
         self.slots.get(id.0 as usize)?.as_ref()
     }
 
+    /// The ID of the live glyph with this name.
     pub fn id_of(&self, name: &str) -> Option<GlyphId> {
         self.by_name.get(name).copied()
     }
@@ -88,13 +92,15 @@ impl GlyphTable {
     }
 
     /// The same glyphs, in the same order, without tombstones. **Load only:** it changes IDs.
+    #[must_use]
     pub fn compact(&self) -> Self {
-        let mut table = Self::new();
-        for (_, glyph) in self.iter() {
-            // Names are unique and there are fewer glyphs than slots: cannot fail.
-            let _ = table.insert(Arc::clone(glyph));
-        }
-        table
+        // Live glyphs keep their order and unique names; only the IDs close up.
+        let slots: Vector<_> = self.iter().map(|(_, g)| Some(Arc::clone(g))).collect();
+        let by_name = (0u32..)
+            .zip(self.iter())
+            .map(|(id, (_, g))| (g.name.clone(), GlyphId(id)))
+            .collect();
+        Self { slots, by_name }
     }
 
     fn live(&self, id: GlyphId) -> Result<&Arc<Glyph>, ModelError> {

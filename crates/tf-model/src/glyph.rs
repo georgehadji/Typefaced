@@ -58,6 +58,7 @@ pub struct Contour {
 }
 
 impl Contour {
+    /// A contour with no identifier or lib.
     pub fn new(points: Vec<Point>) -> Self {
         Self {
             points,
@@ -65,6 +66,7 @@ impl Contour {
         }
     }
 
+    /// Whether the contour is closed (it does not start with a `move` point).
     pub fn is_closed(&self) -> bool {
         self.points
             .first()
@@ -117,6 +119,7 @@ pub struct Color {
 }
 
 impl Color {
+    /// A colour; fails when a channel is outside `0.0..=1.0` or NaN.
     pub fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Result<Self, ModelError> {
         if let Some(bad) = [red, green, blue, alpha]
             .into_iter()
@@ -138,6 +141,7 @@ impl Color {
     }
 }
 
+/// A named position on a glyph layer, for attaching marks.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Anchor {
     pub x: f64,
@@ -193,7 +197,8 @@ pub struct GlyphLayer {
     pub components: Vec<Component>,
     pub contours: Vec<Contour>,
     pub image: Option<Image>,
-    pub lib: LibDict,
+    /// Shared, so editing a point does not copy the lib.
+    pub lib: Arc<LibDict>,
 }
 
 /// A glyph: its name and its layers. A glyph may be missing from any layer, the default one

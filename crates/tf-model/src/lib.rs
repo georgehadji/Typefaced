@@ -22,7 +22,7 @@
 //! |---|---|---|---|
 //! | `Font::meta` (`MetaInfo`: creator, format version, minor) | shadow | — | norad rewrites `metainfo.plist` on save (its own creator, UFO 3); no command reads it |
 //! | `Font::font_info` (`FontInfo`, ~100 fields) | [`Source::font_info`] → [`FontInfo::fields`] | opaque | `font.setInfo` names fields by UFO key; typed accessors read the few that commands use ([`keys`]) |
-//! | `FontInfo::guidelines` (with private identifier and lib) | [`FontInfo::guidelines`] | typed | Each carries an object lib, which norad keeps outside the plist |
+//! | `FontInfo::guidelines` (with private identifier and lib) | [`FontInfo::guidelines`] | typed | Each carries an object lib, which norad keeps outside the plist; norad's save refuses duplicate guideline identifiers |
 //! | `Font::layers` (`LayerContents`: layer order) | [`Source::layers`] order, default first | typed | Layers are entities (`LayerId`) |
 //! | `LayerContents::path_set` (private) | none | — | Derived from layer folder names |
 //! | `Layer::name` | [`SourceLayer::name`] | typed | Designspace masters and the UI name layers |
@@ -46,7 +46,7 @@
 //! | `Glyph::contours` | [`GlyphLayer::contours`] ([`Contour`], [`Point`]) | typed | Outline commands; checked by [`check_contour`] |
 //! | `Glyph::image` (`Image`: private file name, colour, transform) | [`GlyphLayer::image`] ([`Image`]) | typed | Value object |
 //! | `Glyph::lib` | [`GlyphLayer::lib`] | opaque | Never holds `public.objectLibs` |
-//! | `Contour`/`ContourPoint`/`Component`/`Anchor`/`Guideline` private `identifier` and `lib` | the `identifier` and `lib` field of each value object | typed, opaque | norad moves them out of `public.objectLibs` on load and back on save. Identifiers are unique per layer |
+//! | `Contour`/`ContourPoint`/`Component`/`Anchor`/`Guideline` private `identifier` and `lib` | the `identifier` and `lib` field of each value object | typed, opaque | norad moves them out of `public.objectLibs` on load and back on save, keyed by identifier. Identifiers are unique per layer (per source for font-info guidelines), and an object with a lib needs an identifier |
 //! | `ContourPoint::{x, y, typ, smooth, name}` | [`Point`] | typed | `smooth` is never set on an off-curve point (norad clears it) |
 //! | `AffineTransform` | [`Transform`] | typed | Same field names |
 //! | `Color` (private channels) | [`Color`] | typed | Channels checked to `0..=1`, as norad does |
@@ -74,7 +74,7 @@ pub use designspace::{
     Axis, AxisMapping, AxisMappingEntry, AxisMappings, Condition, ConditionSet, Designspace,
     Dimension, Instance, LocalizedString, Master, Rule, RuleProcessing, Rules, Substitution,
 };
-pub use error::{ContourError, ModelError};
+pub use error::{ContourError, ModelError, ObjectOwner};
 pub use font::{Font, ProjectFiles};
 pub use glyph::{
     Anchor, Color, Component, Contour, Glyph, GlyphLayer, Guideline, Image, Line, Point, PointKind,
@@ -85,4 +85,4 @@ pub use lib_value::{LibDict, LibValue, OBJECT_LIBS_KEY};
 pub use name::{Identifier, Name};
 pub use source::{FileStore, FontInfo, Groups, Kerning, Source, SourceLayer, keys};
 pub use table::GlyphTable;
-pub use validate::{Warning, check_contour, check_glyph_layer, check_lib};
+pub use validate::{Warning, check_contour, check_font_info, check_glyph_layer, check_lib};

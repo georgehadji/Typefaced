@@ -22,6 +22,25 @@ pub enum ContourError {
     SmoothOffCurve { index: usize },
 }
 
+/// What holds a set of identified objects. Identifiers are unique within one owner, as
+/// norad requires when it reads a `.glif` and when it saves `fontinfo.plist`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ObjectOwner {
+    /// One `.glif`: contours, points, components, anchors and guidelines.
+    GlyphLayer { glyph: Name, layer: LayerId },
+    /// The guidelines of one source's `fontinfo.plist`.
+    FontInfo(SourceId),
+}
+
+impl std::fmt::Display for ObjectOwner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GlyphLayer { glyph, layer } => write!(f, "glyph {glyph}, {layer}"),
+            Self::FontInfo(source) => write!(f, "font info of {source}"),
+        }
+    }
+}
+
 /// A change refused at the [`Font`](crate::Font) boundary.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum ModelError {
@@ -63,12 +82,17 @@ pub enum ModelError {
         layer: LayerId,
         codepoint: char,
     },
-    #[error("glyph {glyph}, {layer}: identifier {identifier} appears twice")]
+    #[error("{owner}: identifier {identifier} appears twice")]
     DuplicateIdentifier {
-        glyph: Name,
-        layer: LayerId,
+        owner: ObjectOwner,
         identifier: Identifier,
     },
+    /// norad stores object libs under their object's identifier (`public.objectLibs`), so an
+    /// object with a lib needs one.
+    #[error("{owner}: an object has a lib but no identifier")]
+    ObjectLibWithoutIdentifier { owner: ObjectOwner },
+    #[error("glyph {0} has no layers")]
+    NoGlyphLayers(Name),
     /// The key is managed elsewhere (`public.objectLibs` by norad, `guidelines` by
     /// [`FontInfo::guidelines`](crate::FontInfo::guidelines)).
     #[error("the key {0:?} is reserved")]

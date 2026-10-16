@@ -55,34 +55,42 @@ impl FontInfo {
         self.fields.get(key).and_then(LibValue::as_str)
     }
 
+    /// The `familyName` field.
     pub fn family_name(&self) -> Option<&str> {
         self.string(keys::FAMILY_NAME)
     }
 
+    /// The `styleName` field.
     pub fn style_name(&self) -> Option<&str> {
         self.string(keys::STYLE_NAME)
     }
 
+    /// The `unitsPerEm` field.
     pub fn units_per_em(&self) -> Option<f64> {
         self.number(keys::UNITS_PER_EM)
     }
 
+    /// The `ascender` field.
     pub fn ascender(&self) -> Option<f64> {
         self.number(keys::ASCENDER)
     }
 
+    /// The `descender` field.
     pub fn descender(&self) -> Option<f64> {
         self.number(keys::DESCENDER)
     }
 
+    /// The `xHeight` field.
     pub fn x_height(&self) -> Option<f64> {
         self.number(keys::X_HEIGHT)
     }
 
+    /// The `capHeight` field.
     pub fn cap_height(&self) -> Option<f64> {
         self.number(keys::CAP_HEIGHT)
     }
 
+    /// The `italicAngle` field.
     pub fn italic_angle(&self) -> Option<f64> {
         self.number(keys::ITALIC_ANGLE)
     }
@@ -95,16 +103,18 @@ pub struct SourceLayer {
     pub id: LayerId,
     pub name: Name,
     pub color: Option<Color>,
-    pub lib: LibDict,
+    /// Shared, so editing a source does not copy the layer libs.
+    pub lib: Arc<LibDict>,
 }
 
 impl SourceLayer {
+    /// A layer with no colour and an empty lib.
     pub fn new(id: LayerId, name: Name) -> Self {
         Self {
             id,
             name,
             color: None,
-            lib: LibDict::new(),
+            lib: Arc::default(),
         }
     }
 }
@@ -142,6 +152,7 @@ impl Source {
         }
     }
 
+    /// One of this source's layers.
     pub fn layer(&self, id: LayerId) -> Option<&SourceLayer> {
         self.layers.iter().find(|layer| layer.id == id)
     }

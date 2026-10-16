@@ -84,9 +84,10 @@ fn report(name: &str, mut samples_us: Vec<f64>) -> f64 {
     p95
 }
 
-fn replace_samples(base: &Font, id: GlyphId) -> Result<Vec<f64>, ModelError> {
-    let name = format!("g{}", id.0);
-    let edited = glyph(&name, Arc::new(outline(1.0)))?;
+/// Replaces glyph `id` with an edited copy named `name` (its own name, or a new one to time
+/// the rename path through the name index).
+fn replace_samples(base: &Font, id: GlyphId, name: &str) -> Result<Vec<f64>, ModelError> {
+    let edited = glyph(name, Arc::new(outline(1.0)))?;
     let mut samples = Vec::with_capacity(SAMPLES);
     for _ in 0..SAMPLES {
         let start = Instant::now();
@@ -106,7 +107,7 @@ fn run() -> Result<bool, ModelError> {
         for (position, id) in [("first", 0), ("middle", size / 2), ("last", size - 1)] {
             let p95 = report(
                 &format!("replace_glyph, {size} glyphs, {position}"),
-                replace_samples(&base, GlyphId(id))?,
+                replace_samples(&base, GlyphId(id), &format!("g{id}"))?,
             );
             if size == GATED_SIZE && position == "middle" && p95 >= BUDGET_US {
                 eprintln!(
@@ -115,6 +116,11 @@ fn run() -> Result<bool, ModelError> {
                 within_budget = false;
             }
         }
+        // Printed, not gated: a rename also updates the name index.
+        report(
+            &format!("replace_glyph with rename, {size} glyphs, middle"),
+            replace_samples(&base, GlyphId(size / 2), "renamed")?,
+        );
     }
     Ok(within_budget)
 }

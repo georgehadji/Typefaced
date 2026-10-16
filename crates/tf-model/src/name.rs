@@ -14,6 +14,7 @@ use crate::ModelError;
 pub struct Name(Arc<str>);
 
 impl Name {
+    /// Checks `name` against the UFO name rules.
     pub fn new(name: &str) -> Result<Self, ModelError> {
         let control = |c: char| matches!(u32::from(c), 0x00..=0x1f | 0x7f..=0x9f);
         if name.is_empty() || name.chars().any(control) {
@@ -22,6 +23,7 @@ impl Name {
         Ok(Self(name.into()))
     }
 
+    /// The name as text.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -32,6 +34,7 @@ impl Name {
 pub struct Identifier(Arc<str>);
 
 impl Identifier {
+    /// Checks `identifier` against the UFO identifier rules.
     pub fn new(identifier: &str) -> Result<Self, ModelError> {
         if identifier.len() > 100 || !identifier.bytes().all(|b| (0x20..=0x7e).contains(&b)) {
             return Err(ModelError::InvalidIdentifier(identifier.to_owned()));
@@ -39,6 +42,7 @@ impl Identifier {
         Ok(Self(identifier.into()))
     }
 
+    /// The identifier as text.
     pub fn as_str(&self) -> &str {
         &self.0
     }

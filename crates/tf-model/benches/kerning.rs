@@ -1,15 +1,20 @@
 //! Kerning map benchmark (ADR-0017 amendment): 50,000 pairs; set one pair, look one up and
 //! iterate all, for `imbl::OrdMap` (the model's [`Kerning`]) and `imbl::HashMap`.
 //!
-//! Each `set` sample clones the map first (an undo snapshot keeps the old one alive). Exits
-//! with status 1 when the model's map has a `set` or `lookup` p95 >= 50 µs. Iterating all
-//! pairs is printed, not gated. Run with `cargo bench -p tf-model --bench kerning`.
+//! Each `set` sample clones the map first (an undo snapshot keeps the old one alive). The
+//! same edit is also timed on the real path, through a `Font` (an existing pair and a new
+//! one). Exits with status 1 when any of the model's map `set`, `lookup`, or the two `Font`
+//! paths has p95 >= 50 µs. Iterating all pairs is printed, not gated. Run with
+//! `cargo bench -p tf-model --bench kerning`.
 
 use std::hint::black_box;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Instant;
 
-use tf_model::{Kerning, ModelError, Name};
+use tf_model::{Font, Kerning, LayerId, ModelError, Name, Source, SourceId, SourceLayer};
+
+const SOURCE: SourceId = SourceId(0);
 
 const FIRSTS: usize = 250;
 const SECONDS: usize = 200; // 250 x 200 = 50,000 pairs
@@ -120,17 +125,65 @@ fn bench<M: PairMap>(label: &str, map: &M, pairs: &[Pair]) -> (f64, f64) {
     (set, lookup)
 }
 
+/// The path a `kerning.setPairs` reducer takes: clone the font, copy-on-write the source,
+/// set the pair, put the source back through `Font::replace_source` (checks included).
+fn font_set_samples(font: &Font, pairs: &[Pair]) -> Result<Vec<f64>, ModelError> {
+    let mut samples = Vec::with_capacity(pairs.len());
+    for pair in pairs {
+        let pair = pair.clone();
+        let start = Instant::now();
+        let mut next = black_box(font).clone();
+        let mut source = Arc::clone(
+            next.source(SOURCE)
+                .ok_or(ModelError::SourceNotFound(SOURCE))?,
+        );
+        Arc::make_mut(&mut source).kerning.insert(pair, -50.0);
+        let old = next.replace_source(SOURCE, source)?;
+        samples.push(start.elapsed().as_secs_f64() * 1e6);
+        drop(black_box((next, old)));
+    }
+    Ok(samples)
+}
+
 fn run() -> Result<bool, ModelError> {
     let pairs = pairs()?;
     let ord: Kerning = pairs.iter().map(|p| (p.clone(), -10.0)).collect();
     let hash: HashKerning = pairs.iter().map(|p| (p.clone(), -10.0)).collect();
     let (set, lookup) = bench("imbl::OrdMap (model)", &ord, &pairs);
     bench("imbl::HashMap", &hash, &pairs);
-    let ok = set < BUDGET_US && lookup < BUDGET_US;
-    if !ok {
-        eprintln!(
-            "FAIL: the model's kerning map misses {BUDGET_US} µs: set p95 {set:.2} µs, lookup p95 {lookup:.2} µs"
-        );
+
+    let mut source = Source::new(SourceLayer::new(LayerId(0), Name::new("public.default")?));
+    source.kerning = ord;
+    let font = Font::new(SOURCE, source)?;
+    let existing: Vec<Pair> = (0..SAMPLES)
+        .map(|k| pairs[k * STRIDE % pairs.len()].clone())
+        .collect();
+    let new: Vec<Pair> = (0..SAMPLES)
+        .map(|k| {
+            Ok((
+                pairs[k * STRIDE % pairs.len()].0.clone(),
+                Name::new(&format!("new{k}"))?,
+            ))
+        })
+        .collect::<Result<_, ModelError>>()?;
+    let font_set = report(
+        "Font: set an existing pair",
+        font_set_samples(&font, &existing)?,
+    );
+    let font_new = report("Font: add a new pair", font_set_samples(&font, &new)?);
+
+    let gated = [
+        ("OrdMap set", set),
+        ("OrdMap lookup", lookup),
+        ("Font set", font_set),
+        ("Font new pair", font_new),
+    ];
+    let mut ok = true;
+    for (name, p95) in gated {
+        if p95 >= BUDGET_US {
+            eprintln!("FAIL: {name} p95 {p95:.2} µs >= {BUDGET_US} µs");
+            ok = false;
+        }
     }
     Ok(ok)
 }

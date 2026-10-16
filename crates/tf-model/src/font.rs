@@ -1,17 +1,19 @@
 //! The aggregate root: a font project. Every change goes through a `Font` method that checks
 //! the invariants first and leaves the font unchanged when it fails.
 //!
-//! Invariants: glyph names are unique; every contour is a valid UFO point sequence; every
-//! `LayerId` a glyph or designspace master uses belongs to a source; layer IDs are unique
-//! across sources and layer names within a source; no lib holds `public.objectLibs`.
+//! Invariants: glyph names are unique and every glyph has at least one layer; every contour
+//! is a valid UFO point sequence; every `LayerId` a glyph or designspace master uses belongs
+//! to a source; layer IDs are unique across sources and layer names within a source; object
+//! identifiers are unique per glyph layer and per font info, and an object with a lib has an
+//! identifier; no lib holds `public.objectLibs`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use imbl::OrdMap;
 
-use crate::validate::{Warning, check_glyph_layer, check_lib};
-use crate::{Designspace, Glyph, GlyphId, GlyphTable, LayerId, ModelError, Source, SourceId, keys};
+use crate::validate::{Warning, check_font_info, check_glyph_layer, check_lib};
+use crate::{Designspace, Glyph, GlyphId, GlyphTable, LayerId, ModelError, Source, SourceId};
 
 /// Project files that are not font sources (filled by `tf-io`'s `.typefaced` package, Step 11).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -50,10 +52,12 @@ impl Font {
         })
     }
 
+    /// The glyph table.
     pub fn glyphs(&self) -> &GlyphTable {
         &self.glyphs
     }
 
+    /// The live glyph with this ID.
     pub fn glyph(&self, id: GlyphId) -> Option<&Arc<Glyph>> {
         self.glyphs.get(id)
     }
@@ -63,6 +67,7 @@ impl Font {
         self.sources.iter().map(|(id, source)| (*id, source))
     }
 
+    /// One source by ID.
     pub fn source(&self, id: SourceId) -> Option<&Arc<Source>> {
         self.sources.get(&id)
     }
@@ -85,10 +90,12 @@ impl Font {
             .map(|(id, _)| *id)
     }
 
+    /// The designspace of a multi-master project.
     pub fn designspace(&self) -> Option<&Arc<Designspace>> {
         self.designspace.as_ref()
     }
 
+    /// Project files that are not font sources.
     pub fn project(&self) -> &Arc<ProjectFiles> {
         &self.project
     }
@@ -101,6 +108,7 @@ impl Font {
             .map_or(&[], |glyph| glyph.codepoints(self.default_layer))
     }
 
+    /// Adds a source. Its layer IDs must be new to the font.
     pub fn add_source(&mut self, id: SourceId, source: Source) -> Result<(), ModelError> {
         if self.sources.contains_key(&id) {
             return Err(ModelError::SourceExists(id));
@@ -159,10 +167,13 @@ impl Font {
         Ok(())
     }
 
+    /// Replaces the project files.
     pub fn set_project(&mut self, project: ProjectFiles) {
         self.project = Arc::new(project);
     }
 
+    /// Adds a glyph and returns its new ID. Every layer must exist and pass the
+    /// checks, and the name must be free.
     pub fn insert_glyph(&mut self, glyph: Arc<Glyph>) -> Result<GlyphId, ModelError> {
         self.check_glyph(&glyph)?;
         self.glyphs.insert(glyph)
@@ -178,6 +189,18 @@ impl Font {
         self.glyphs.replace(id, glyph)
     }
 
+    /// Runs several changes as one: `edit` works on a copy (cheap: a few pointers), which
+    /// replaces `self` only when `edit` returns `Ok`. On `Err`, `self` is unchanged.
+    pub fn try_update<T, E>(
+        &mut self,
+        edit: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let mut draft = self.clone();
+        let value = edit(&mut draft)?;
+        *self = draft;
+        Ok(value)
+    }
+
     /// Deletes a glyph, leaving a tombstone, and returns it.
     pub fn remove_glyph(&mut self, id: GlyphId) -> Result<Arc<Glyph>, ModelError> {
         self.glyphs.remove(id)
@@ -186,6 +209,7 @@ impl Font {
     /// The same font with glyph IDs renumbered without tombstones. **Load only**: open
     /// sandboxes, undo snapshots and clients hold glyph IDs. Model data names glyphs, never
     /// IDs, so nothing else changes.
+    #[must_use]
     pub fn compact(&self) -> Self {
         Self {
             glyphs: self.glyphs.compact(),
@@ -213,6 +237,9 @@ impl Font {
     }
 
     fn check_glyph(&self, glyph: &Glyph) -> Result<(), ModelError> {
+        if glyph.layers.is_empty() {
+            return Err(ModelError::NoGlyphLayers(glyph.name.clone()));
+        }
         for (layer, data) in &glyph.layers {
             if self.layer_source(*layer).is_none() {
                 return Err(ModelError::LayerNotFound(*layer));
@@ -258,9 +285,7 @@ fn check_source(
         return Err(ModelError::NoLayers(id));
     }
     check_lib(&source.lib)?;
-    if source.font_info.fields.contains_key(keys::GUIDELINES) {
-        return Err(ModelError::ReservedKey(keys::GUIDELINES.to_owned()));
-    }
+    check_font_info(id, &source.font_info)?;
     let mut ids = BTreeSet::new();
     let mut names = BTreeSet::new();
     for layer in &source.layers {
@@ -282,8 +307,8 @@ fn check_source(
 mod tests {
     use super::*;
     use crate::{
-        Component, Contour, GlyphLayer, LibDict, LibValue, Master, Name, OBJECT_LIBS_KEY, Point,
-        PointKind, SourceLayer, Transform,
+        Component, Contour, GlyphLayer, Guideline, Identifier, LibDict, LibValue, Line, Master,
+        Name, OBJECT_LIBS_KEY, ObjectOwner, Point, PointKind, SourceLayer, Transform, keys,
     };
 
     fn name(s: &str) -> Name {
@@ -373,12 +398,19 @@ mod tests {
         ));
         assert!(font.replace_glyph(id, glyph("A", &[(0, open)])).is_err());
         assert_eq!(
-            font.insert_glyph(glyph("A", &[])),
+            font.insert_glyph(glyph("A", &[(0, square())])),
             Err(ModelError::NameInUse(name("A")))
         );
+        assert_eq!(
+            font.insert_glyph(glyph("B", &[])),
+            Err(ModelError::NoGlyphLayers(name("B")))
+        );
+        assert_eq!(
+            font.replace_glyph(id, glyph("A", &[])),
+            Err(ModelError::NoGlyphLayers(name("A")))
+        );
         let mut reserved = square();
-        reserved
-            .lib
+        Arc::make_mut(&mut reserved.lib)
             .insert(OBJECT_LIBS_KEY.into(), LibValue::Dict(LibDict::new()));
         assert!(font.insert_glyph(glyph("B", &[(0, reserved)])).is_err());
         // Failed changes leave the font as it was.
@@ -462,10 +494,27 @@ mod tests {
         assert!(font.add_source(SourceId(1), lib_key).is_err());
 
         let mut layer_key = second_source();
-        layer_key.layers[0]
-            .lib
+        Arc::make_mut(&mut layer_key.layers[0].lib)
             .insert(OBJECT_LIBS_KEY.into(), LibValue::Boolean(true));
         assert!(font.add_source(SourceId(1), layer_key).is_err());
+
+        // Font-info guidelines follow the object rules (checked at the source boundary).
+        let mut guidelines = second_source();
+        let guide = Guideline {
+            line: Line::Vertical(10.0),
+            name: None,
+            color: None,
+            identifier: Some(Identifier::new("g1").unwrap()),
+            lib: None,
+        };
+        Arc::make_mut(&mut guidelines.font_info).guidelines = Some(vec![guide.clone(), guide]);
+        assert_eq!(
+            font.add_source(SourceId(1), guidelines),
+            Err(ModelError::DuplicateIdentifier {
+                owner: ObjectOwner::FontInfo(SourceId(1)),
+                identifier: Identifier::new("g1").unwrap()
+            })
+        );
 
         let mut info_key = second_source();
         Arc::make_mut(&mut info_key.font_info)
@@ -619,5 +668,39 @@ mod tests {
             files,
         });
         assert_eq!(font.project().files.len(), 1);
+    }
+
+    /// A multi-call edit through `try_update` lands whole or not at all.
+    #[test]
+    fn try_update_is_all_or_nothing() {
+        let mut font = font();
+        let before = font.clone();
+        let failed = font.try_update(|f| {
+            f.insert_glyph(glyph("A", &[(0, square())]))?;
+            f.insert_glyph(glyph("A", &[(0, square())]))
+        });
+        assert_eq!(failed, Err(ModelError::NameInUse(name("A"))));
+        assert_eq!(font, before);
+
+        let ids = font
+            .try_update(|f| {
+                let a = f.insert_glyph(glyph("A", &[(0, square())]))?;
+                let b = f.insert_glyph(glyph("B", &[(1, square())]))?;
+                Ok::<_, ModelError>((a, b))
+            })
+            .unwrap();
+        assert_eq!(ids, (GlyphId(0), GlyphId(1)));
+        assert_eq!(font.glyphs().len(), 2);
+    }
+
+    /// Libs are shared: editing a cloned layer's lib leaves the original untouched.
+    #[test]
+    fn layer_libs_are_shared_until_edited() {
+        let original = square();
+        let mut edited = original.clone();
+        assert!(Arc::ptr_eq(&original.lib, &edited.lib));
+        Arc::make_mut(&mut edited.lib).insert("com.example".into(), LibValue::Integer(1));
+        assert!(original.lib.is_empty());
+        assert_eq!(edited.lib.len(), 1);
     }
 }

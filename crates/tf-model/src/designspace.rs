@@ -7,6 +7,7 @@
 
 use crate::{LayerId, LibDict, Name, SourceId};
 
+/// A designspace document.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Designspace {
     /// The `format` attribute (`5.0`, `4.1`, …).
@@ -19,6 +20,7 @@ pub struct Designspace {
     pub lib: LibDict,
 }
 
+/// An `<axis>`: continuous (`minimum`, `maximum`) or discrete (`values`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Axis {
     pub name: String,
@@ -33,12 +35,14 @@ pub struct Axis {
     pub label_names: Vec<LocalizedString>,
 }
 
+/// A label in one language.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LocalizedString {
     pub language: String,
     pub string: String,
 }
 
+/// One `<map>` point of an axis: user value to design value.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AxisMapping {
     pub input: f32,
@@ -52,6 +56,7 @@ pub struct AxisMappings {
     pub mappings: Vec<AxisMappingEntry>,
 }
 
+/// One avar2 mapping from an input to an output location.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AxisMappingEntry {
     pub description: Option<String>,
@@ -59,12 +64,14 @@ pub struct AxisMappingEntry {
     pub output: Vec<Dimension>,
 }
 
+/// The `<rules>` element.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Rules {
     pub processing: RuleProcessing,
     pub rules: Vec<Rule>,
 }
 
+/// When rules apply: at the first or the last substitution feature.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum RuleProcessing {
     #[default]
@@ -80,17 +87,20 @@ pub struct Rule {
     pub substitutions: Vec<Substitution>,
 }
 
+/// One glyph swap of a rule.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Substitution {
     pub name: Name,
     pub with: Name,
 }
 
+/// Conditions that must all hold.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ConditionSet {
     pub conditions: Vec<Condition>,
 }
 
+/// A range on one axis.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Condition {
     pub name: String,
@@ -114,6 +124,7 @@ pub struct Master {
     pub location: Vec<Dimension>,
 }
 
+/// An `<instance>` element.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Instance {
     pub name: Option<String>,
