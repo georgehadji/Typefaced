@@ -12,12 +12,17 @@ use std::fmt;
 use kurbo::BezPath;
 
 /// Why an engine refused its input.
+///
+/// Non-exhaustive: an engine may gain a reason to refuse input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BooleanError {
     /// A coordinate is NaN or infinite.
     NonFinite,
     /// A contour does not end where it starts.
     OpenContour,
+    /// A coordinate is finite but larger than the engine handles reliably.
+    OutOfRange,
 }
 
 impl fmt::Display for BooleanError {
@@ -25,6 +30,7 @@ impl fmt::Display for BooleanError {
         f.write_str(match self {
             Self::NonFinite => "a coordinate is NaN or infinite",
             Self::OpenContour => "a contour is not closed",
+            Self::OutOfRange => "a coordinate is too large for the engine",
         })
     }
 }
@@ -35,7 +41,9 @@ impl std::error::Error for BooleanError {}
 ///
 /// `Send + Sync`: glyphs are independent, so export runs them in parallel (ADR-0008).
 pub trait BooleanEngine: Send + Sync {
-    /// The outline with its overlaps removed: the union of its own contours.
+    /// The outline with its overlaps removed: the region where its winding number is not
+    /// zero, as contours that do not overlap. Counters stay holes. The output segments
+    /// match the input only to within the engine's accuracy.
     fn remove_overlap(&self, path: &BezPath) -> Result<BezPath, BooleanError>;
     /// The area inside `a` or `b`.
     fn union(&self, a: &BezPath, b: &BezPath) -> Result<BezPath, BooleanError>;
@@ -58,6 +66,10 @@ mod tests {
         assert_eq!(
             BooleanError::OpenContour.to_string(),
             "a contour is not closed"
+        );
+        assert_eq!(
+            BooleanError::OutOfRange.to_string(),
+            "a coordinate is too large for the engine"
         );
     }
 }

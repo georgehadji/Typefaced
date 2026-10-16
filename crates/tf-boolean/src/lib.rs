@@ -2,8 +2,9 @@
 //!
 //! Every operation is one `linesweeper::binary_op` call under the non-zero fill rule;
 //! remove-overlap is the union of a path with an empty path, the call Spike 5 measured
-//! and fontc #2070 uses. The output then goes through a debris filter that drops
-//! contours below [`DEBRIS_AREA`].
+//! and fontc #2070 uses. Input with a coordinate that is not finite, or larger than
+//! [`MAX_COORDINATE`], is refused first. The output then goes through a debris filter that
+//! drops contours below [`DEBRIS_AREA`].
 
 use kurbo::{BezPath, PathEl, Shape};
 use linesweeper::{BinaryOp, FillRule};
@@ -16,6 +17,15 @@ use tf_geometry::{BooleanEngine, BooleanError};
 /// (`tiny-squares-200`) is 4.4e-5 unit², and the smallest in `tiny-circles-200` 2.2e-3.
 /// The threshold sits between them, with a margin of over 40x on each side.
 pub const DEBRIS_AREA: f64 = 1e-6;
+
+/// Input coordinates beyond this magnitude, in font units, are refused
+/// ([`BooleanError::OutOfRange`]).
+///
+/// TrueType coordinates are 16-bit and source coordinates rarely pass a few em, so this is
+/// far above real input. It keeps linesweeper's arithmetic (products and squares of
+/// coordinates) far from overflow: linesweeper 0.4.0 checks only that the bounding box is
+/// finite, and a huge finite coordinate can still overflow to infinity inside the sweep.
+pub const MAX_COORDINATE: f64 = 1e7;
 
 /// The linesweeper engine.
 #[derive(Debug, Default, Clone, Copy)]
@@ -43,11 +53,12 @@ impl BooleanEngine for Linesweeper {
 /// debris filter.
 fn run(a: &BezPath, b: &BezPath, op: BinaryOp) -> Result<BezPath, BooleanError> {
     // linesweeper checks finiteness on the bounding box only, which `f64::min` and `max`
-    // can hide (NaN drops out of them); a non-finite point then trips an assertion inside it.
-    if !(is_finite(a) && is_finite(b)) {
-        return Err(BooleanError::NonFinite);
-    }
+    // can hide (NaN drops out of them). A non-finite point then trips a debug assertion
+    // inside it; what a release build does with it is not specified.
+    check_input(a)?;
+    check_input(b)?;
     let contours = linesweeper::binary_op(a, b, FillRule::NonZero, op).map_err(|e| match e {
+        // Defensive: `check_input` already refuses what these two report.
         linesweeper::Error::Infinity | linesweeper::Error::NaN => BooleanError::NonFinite,
         linesweeper::Error::NonClosedPath(_) => BooleanError::OpenContour,
     })?;
@@ -58,14 +69,28 @@ fn run(a: &BezPath, b: &BezPath, op: BinaryOp) -> Result<BezPath, BooleanError> 
         .collect())
 }
 
-/// Whether every point of `path`, on or off the curve, is finite.
-fn is_finite(path: &BezPath) -> bool {
-    path.iter().all(|el| match el {
-        PathEl::MoveTo(p) | PathEl::LineTo(p) => p.is_finite(),
-        PathEl::QuadTo(c, p) => c.is_finite() && p.is_finite(),
-        PathEl::CurveTo(c0, c1, p) => c0.is_finite() && c1.is_finite() && p.is_finite(),
-        PathEl::ClosePath => true,
-    })
+/// Refuses a path with a point, on or off the curve, that is not finite
+/// ([`BooleanError::NonFinite`], which wins) or beyond [`MAX_COORDINATE`]
+/// ([`BooleanError::OutOfRange`]).
+fn check_input(path: &BezPath) -> Result<(), BooleanError> {
+    let points = path.iter().flat_map(|el| match el {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) => [Some(p), None, None],
+        PathEl::QuadTo(c, p) => [Some(c), Some(p), None],
+        PathEl::CurveTo(c0, c1, p) => [Some(c0), Some(c1), Some(p)],
+        PathEl::ClosePath => [None, None, None],
+    });
+    let mut in_range = true;
+    for p in points.flatten() {
+        if !p.is_finite() {
+            return Err(BooleanError::NonFinite);
+        }
+        in_range &= p.x.abs() <= MAX_COORDINATE && p.y.abs() <= MAX_COORDINATE;
+    }
+    if in_range {
+        Ok(())
+    } else {
+        Err(BooleanError::OutOfRange)
+    }
 }
 
 #[cfg(test)]
@@ -93,11 +118,18 @@ mod tests {
         areas
     }
 
-    fn triangle_with(p: kurbo::Point, control: bool) -> BezPath {
+    /// A triangle whose second point, or a quadratic or cubic control point, is `p`.
+    fn triangle_with(p: kurbo::Point, segment: Segment) -> BezPath {
         let mut path = BezPath::new();
         path.move_to((0.0, 0.0));
-        if control {
+        if segment == Segment::Quad {
             path.quad_to(p, kurbo::Point::new(100.0, 0.0));
+        } else if segment == Segment::Cubic {
+            path.curve_to(
+                kurbo::Point::new(30.0, -10.0),
+                p,
+                kurbo::Point::new(100.0, 0.0),
+            );
         } else {
             path.line_to((100.0, 0.0));
             path.line_to(p);
@@ -105,6 +137,13 @@ mod tests {
         path.line_to((50.0, 100.0));
         path.close_path();
         path
+    }
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Segment {
+        Line,
+        Quad,
+        Cubic,
     }
 
     #[test]
@@ -147,9 +186,9 @@ mod tests {
     #[test]
     fn non_finite_coordinates_are_refused_on_and_off_the_curve() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            for control in [false, true] {
+            for segment in [Segment::Line, Segment::Quad, Segment::Cubic] {
                 for p in [kurbo::Point::new(bad, 10.0), kurbo::Point::new(10.0, bad)] {
-                    let path = triangle_with(p, control);
+                    let path = triangle_with(p, segment);
                     let ok = rect(0.0, 0.0, 1.0, 1.0);
                     assert_eq!(
                         Linesweeper.remove_overlap(&path),
@@ -164,6 +203,34 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn coordinates_beyond_the_limit_are_refused() {
+        for huge in [1e200, -1e200, 2.0 * MAX_COORDINATE] {
+            for segment in [Segment::Line, Segment::Quad, Segment::Cubic] {
+                let path = triangle_with(kurbo::Point::new(10.0, huge), segment);
+                assert_eq!(
+                    Linesweeper.remove_overlap(&path),
+                    Err(BooleanError::OutOfRange),
+                    "{path:?}"
+                );
+                assert_eq!(
+                    Linesweeper.intersection(&rect(0.0, 0.0, 1.0, 1.0), &path),
+                    Err(BooleanError::OutOfRange)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn coordinates_up_to_the_limit_work() {
+        let m = MAX_COORDINATE;
+        let mut two = rect(-m, -m, 0.5 * m, m);
+        two.extend(rect(-0.5 * m, -m, m, m));
+        let areas = contours(&Linesweeper.remove_overlap(&two).unwrap());
+        assert_eq!(areas.len(), 1, "{areas:?}");
+        assert!((areas[0] - 4.0 * m * m).abs() / (m * m) < 1e-9, "{areas:?}");
     }
 
     #[test]

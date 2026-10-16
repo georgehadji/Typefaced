@@ -38,8 +38,8 @@ After that, M2 (build pipeline) can start.
 | Step | Title | Depends on | Tier | Effort | Status |
 |---|---|---|---|---|---|
 | 1 | `tf-model`: domain model, glyph table, benchmarks | — | strongest | 2 d | DONE (#17) |
-| 2 | `tf-boolean`: linesweeper adapter and regression corpus | — | default | 1.5 d | TODO |
-| 3 | `tf-commands`: command catalog v1 and packed outlines | — | default | 1.5 d | IN REVIEW (branch m1/03-commands) |
+| 2 | `tf-boolean`: linesweeper adapter and regression corpus | — | default | 1.5 d | IN REVIEW (branch m1/02-boolean) |
+| 3 | `tf-commands`: command catalog v1 and packed outlines | — | default | 1.5 d | DONE (#18) |
 | 4 | `tf-engine` core: document, reducer dispatch, history | 1, 3 | strongest | 2 d | TODO |
 | 5 | Reducers: glyph structure, font data, queries | 4 | strongest | 1.5 d | TODO |
 | 6 | Reducers: outlines, components, anchors; patches; commit gate | 4 | strongest | 2 d | TODO |

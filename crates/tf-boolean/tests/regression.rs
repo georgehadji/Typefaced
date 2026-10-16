@@ -6,6 +6,7 @@
 //! `cargo test -p tf-boolean --locked -- --ignored --nocapture`: the upgrade check that
 //! every linesweeper upgrade reruns.
 
+// Each test target uses only part of the shared module.
 #[allow(dead_code)]
 mod common;
 
@@ -13,11 +14,11 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use common::cases::{self, Case};
 use common::oracle;
-use kurbo::BezPath;
+use kurbo::{Affine, BezPath};
 use tf_boolean::Linesweeper;
 use tf_geometry::BooleanEngine;
 
-/// Overlap left, mixed winding and area error fail above this fraction of the input area.
+/// Overlap left, clockwise fill and area error fail above this fraction of the input area.
 const AREA_TOLERANCE: f64 = 1e-3;
 
 /// What the whole run found; every case runs even when an earlier one fails.
@@ -94,7 +95,8 @@ fn check(input: &BezPath, out: &BezPath) -> (Vec<String>, f64) {
     for (what, area) in [
         ("area error", c.xor_area),
         ("overlap left", c.overlap_area),
-        ("mixed winding", c.mixed_winding_area()),
+        // Filled regions wound clockwise: mixed directions, or every contour reversed.
+        ("clockwise fill", c.negative_area),
     ] {
         let rel = c.relative(area);
         if rel.is_nan() || rel > AREA_TOLERANCE {
@@ -252,5 +254,26 @@ fn debris_is_dropped_and_small_holes_stay() {
     for (name, holes) in [("tiny-circles-200", 25), ("tiny-squares-200", 92)] {
         let out = Linesweeper.remove_overlap(&synthetic_case(name)).unwrap();
         assert_eq!(oracle::structure(&out).tiny_contours, holes, "{name}");
+    }
+}
+
+/// The threshold was measured on cases about 1,000 units wide. At ten times that size (a
+/// 10,000-unit em, or an outline drawn large) the debris still drops and every contour of
+/// the small-hole cases stays.
+#[test]
+fn debris_threshold_holds_at_ten_times_the_size() {
+    let large = |name: &str| Affine::scale(10.0) * synthetic_case(name);
+    for name in ["coincident-curves", "circle-traced-twice"] {
+        let out = Linesweeper.remove_overlap(&large(name)).unwrap();
+        assert_eq!(oracle::structure(&out).contours, 1, "{name}");
+    }
+    for name in ["tiny-circles-200", "tiny-squares-200"] {
+        let contours =
+            |path: &BezPath| oracle::structure(&Linesweeper.remove_overlap(path).unwrap()).contours;
+        assert_eq!(
+            contours(&large(name)),
+            contours(&synthetic_case(name)),
+            "{name}"
+        );
     }
 }

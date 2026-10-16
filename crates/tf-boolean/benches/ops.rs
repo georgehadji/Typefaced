@@ -3,6 +3,7 @@
 //! itself shifted by a third of its size (the Spike 5 follow-up). Prints p50, p95 and max
 //! per operation and group; no budget. Run with `cargo bench -p tf-boolean`.
 
+// The bench uses only part of the shared test module.
 #[allow(dead_code)]
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -44,6 +45,9 @@ fn shifted(path: &BezPath) -> BezPath {
 }
 
 fn bench(group: &str, cases: &[Case]) -> Result<(), String> {
+    if cases.is_empty() {
+        return Err(format!("{group}: no cases"));
+    }
     let ops: [(&str, Op, bool); 3] = [
         (
             "remove overlap",

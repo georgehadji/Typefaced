@@ -234,6 +234,7 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   │   │   ├── cases.rs
 │   │   │   │   ├── mod.rs
 │   │   │   │   └── oracle.rs
+│   │   │   ├── properties.proptest-regressions
 │   │   │   ├── properties.rs
 │   │   │   └── regression.rs
 │   │   └── Cargo.toml
