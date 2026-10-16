@@ -39,6 +39,7 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
 | AI egress: API key storage, request policy, streaming proxy | `crates/tf-ai-host/src/` → `apps/desktop/src-tauri/src/ai.rs` |
 | AI client in the webview (SDK, custom fetch, tools) | `packages/ai/src/` |
+| Domain model of a font project; where each norad field lives | `crates/tf-model/src/lib.rs` |
 | Geometry kernel (hit testing, point edits) | `crates/tf-geometry/src/lib.rs` → `crates/tf-wasm/src/lib.rs` → `packages/geometry-wasm` |
 | UI code | `apps/desktop/src/` |
 | Repository gates (layering, licenses, coverage, corpus) | `xtask/src/` |
@@ -78,6 +79,9 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | `crates/tf-geometry/` | [CONTEXT.md](crates/tf-geometry/CONTEXT.md) | Geometry kernel crate on packed outlines (domain layer) |
 | `crates/tf-geometry/benches/` | [CONTEXT.md](crates/tf-geometry/benches/CONTEXT.md) | Headless timing of the hit test |
 | `crates/tf-geometry/src/` | [CONTEXT.md](crates/tf-geometry/src/CONTEXT.md) | Hit testing and point edits |
+| `crates/tf-model/` | [CONTEXT.md](crates/tf-model/CONTEXT.md) | Domain model crate (domain layer): font, glyph table, sources, designspace |
+| `crates/tf-model/benches/` | [CONTEXT.md](crates/tf-model/benches/CONTEXT.md) | Glyph-table and kerning budgets |
+| `crates/tf-model/src/` | [CONTEXT.md](crates/tf-model/src/CONTEXT.md) | Model types, glyph table, invariant checks, proptest generators |
 | `crates/tf-wasm/` | [CONTEXT.md](crates/tf-wasm/CONTEXT.md) | WebAssembly facade crate over `tf-geometry` (driver layer) |
 | `crates/tf-wasm/src/` | [CONTEXT.md](crates/tf-wasm/src/CONTEXT.md) | The exported WASM functions |
 | `docs/` | [CONTEXT.md](docs/CONTEXT.md) | Research, implementation plan |
@@ -117,7 +121,7 @@ Two folders have no `CONTEXT.md` on purpose, because tools read every file in th
 | `CONTEXT.md` | This file: project summary, folder map, file map |
 | `README.md` | Short public description and status |
 | `LICENSE` | Proprietary license, all rights reserved |
-| `Cargo.toml` | Rust workspace: members (`crates/*`, the Tauri crate, `xtask`), shared package fields, shared dependency versions, lints (`unsafe_code`, `unwrap_used`, `expect_used` denied), release profile |
+| `Cargo.toml` | Rust workspace: members (`crates/*`, the Tauri crate, `xtask`), shared package fields, shared dependency versions, lints (`unsafe_code`, `unwrap_used`, `expect_used` denied), release profile, bench profile without LTO |
 | `Cargo.lock` | Locked Rust dependency versions for the workspace |
 | `rust-toolchain.toml` | Pins Rust 1.98.1 with rustfmt, clippy, llvm-tools and the `wasm32-unknown-unknown` target |
 | `clippy.toml` | Allows `unwrap`/`expect` inside tests only |
@@ -243,6 +247,24 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   ├── tf-geometry/
 │   │   ├── benches/hit_test.rs
 │   │   ├── src/lib.rs
+│   │   └── Cargo.toml
+│   ├── tf-model/
+│   │   ├── benches/
+│   │   │   ├── glyph_table.rs
+│   │   │   └── kerning.rs
+│   │   ├── src/
+│   │   │   ├── designspace.rs
+│   │   │   ├── error.rs
+│   │   │   ├── font.rs
+│   │   │   ├── glyph.rs
+│   │   │   ├── ids.rs
+│   │   │   ├── lib.rs
+│   │   │   ├── lib_value.rs
+│   │   │   ├── name.rs
+│   │   │   ├── source.rs
+│   │   │   ├── table.rs
+│   │   │   ├── testing.rs
+│   │   │   └── validate.rs
 │   │   └── Cargo.toml
 │   └── tf-wasm/
 │       ├── src/lib.rs

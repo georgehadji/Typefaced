@@ -11,10 +11,10 @@ description = "Geometry kernel on packed outlines: hit testing and point edits (
 layer = "domain"
 
 [dependencies]
-kurbo = "0.13.1"
+kurbo = { workspace = true }
 
 [dev-dependencies]
-proptest = "1"
+proptest = { workspace = true }
 
 # Plain timing loop on the 5,000-point glyph; `cargo bench -p tf-geometry`.
 [[bench]]

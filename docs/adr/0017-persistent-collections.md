@@ -40,3 +40,13 @@ Enforcement and triggers to revisit:
 - `tf-model` keeps a regression benchmark for the 50 µs single-edit budget at 30,000 glyphs, editing glyphs in the middle of the table (M1).
 - `cargo-deny` checks `imbl` and `imbl-sized-chunks` once `tf-model` depends on them (M1): MPL-2.0 is on the allow-list since Step 3.1, and code review keeps the crates unmodified.
 - Revisit if profiling shows `imbl` reads on a hot path that caching cannot fix, or if `imbl` stops being maintained.
+
+## Amendment (M1 Step 1, 2026-10-15): kerning map and when IDs are compacted
+
+- **Kerning uses `imbl::OrdMap`**, one map per source keyed by `(first, second)` names (`tf_model::Kerning`). `benches/kerning.rs` in `tf-model` measured 50,000 pairs on the development machine (three runs, under load from parallel builds; p95):
+  - `OrdMap`: set one pair (clone included) 15.4–20.8 µs, look one up 4.6–5.0 µs, iterate all 3.9–5.6 ms.
+  - `HashMap`: set 15.5–17.1 µs, look up 1.5–1.8 µs, iterate all 12.8–13.6 ms.
+
+  Both pass the 50 µs budget, so the rule picks `OrdMap`: it iterates in the order norad writes `kerning.plist` (by first side, then second), so saving needs no sort (§9). The name index of the glyph table and the groups use `OrdMap` too.
+- **Glyph IDs are compacted on load only, never on save.** The Decision above says "on load or save". In M1, open sandboxes, undo snapshots and clients hold `GlyphId`s (M1 plan, Step 7), and saving writes glyph names, not IDs, so a save needs no compaction.
+- **Regression benchmark.** `cargo bench -p tf-model` runs in the CI `windows` job and fails when the middle replace at 30,000 glyphs has p95 ≥ 50 µs, or the kerning map misses 50 µs for set or lookup, alone or on the reducer path through a `Font` (clone, copy-on-write the source, `replace_source`: 23.6–23.7 µs p95 for an existing or a new pair). A replace that renames the glyph also updates the name index; it is printed, not gated (p95 45.9 µs at 30,000 glyphs, 55.7 µs at 65,535, in one run under load). Measured locally (three runs, p95, clone of the font included): first/middle/last at 30,000 glyphs 7.6–8.1 / 16.9–23.5 / 4.9–7.3 µs; at 65,535 glyphs 5.5–10.8 / 12.6–22.6 / 5.5–10.2 µs.
