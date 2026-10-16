@@ -1,0 +1,47 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`query.getGlyph`: one glyph with its layers.",
+  "properties": {
+    "fields": {
+      "description": "The optional parts to include; `null` includes all of them.",
+      "items": {
+        "anyOf": [
+          {
+            "const": "outline",
+            "description": "The contours, as a packed outline.",
+            "type": "string"
+          },
+          {
+            "const": "components",
+            "description": "The components.",
+            "type": "string"
+          },
+          {
+            "const": "anchors",
+            "description": "The anchors.",
+            "type": "string"
+          }
+        ],
+        "description": "The optional parts of a glyph layer that `query.getGlyph` returns."
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "fields",
+    "id"
+  ],
+  "title": "QueryGetGlyph",
+  "type": "object"
+}

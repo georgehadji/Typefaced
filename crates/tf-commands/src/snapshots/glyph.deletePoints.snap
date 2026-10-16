@@ -1,0 +1,32 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.deletePoints`: delete points.",
+  "properties": {
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    },
+    "indices": {
+      "description": "Point indices into the layer's packed outline; order and repeats do not matter.",
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "layer": {
+      "description": "The layer.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "indices",
+    "layer"
+  ],
+  "title": "GlyphDeletePoints",
+  "type": "object"
+}

@@ -1,0 +1,54 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`font.setVerticalMetrics`: set the vertical metrics of one source.",
+  "properties": {
+    "ascender": {
+      "description": "Ascender; `null` leaves it unchanged.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "capHeight": {
+      "description": "Cap height; `null` leaves it unchanged.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "descender": {
+      "description": "Descender (usually negative); `null` leaves it unchanged.",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "source": {
+      "description": "The source; `null` means the default source.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "xHeight": {
+      "description": "x-height; `null` leaves it unchanged.",
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "ascender",
+    "capHeight",
+    "descender",
+    "source",
+    "xHeight"
+  ],
+  "title": "FontSetVerticalMetrics",
+  "type": "object"
+}

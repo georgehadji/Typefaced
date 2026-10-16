@@ -1,0 +1,27 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.setCodepoints`: replace a glyph's code points.",
+  "properties": {
+    "codepoints": {
+      "description": "Unicode code points; empty removes them all.",
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "codepoints",
+    "id"
+  ],
+  "title": "GlyphSetCodepoints",
+  "type": "object"
+}

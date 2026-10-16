@@ -1,0 +1,46 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`kerning.removePairs`: remove kerning pairs of one source.",
+  "properties": {
+    "pairs": {
+      "description": "The pairs to remove.",
+      "items": {
+        "additionalProperties": false,
+        "description": "A kerning pair without its value.",
+        "properties": {
+          "left": {
+            "description": "First (left) side.",
+            "type": "string"
+          },
+          "right": {
+            "description": "Second (right) side.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "left",
+          "right"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "source": {
+      "description": "The source; `null` means the default source.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "pairs",
+    "source"
+  ],
+  "title": "KerningRemovePairs",
+  "type": "object"
+}

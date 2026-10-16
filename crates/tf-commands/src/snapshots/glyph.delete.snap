@@ -1,0 +1,23 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.delete`: delete glyphs (destructive).",
+  "properties": {
+    "ids": {
+      "description": "The glyphs to delete.",
+      "items": {
+        "description": "A glyph in the document's glyph table.",
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "title": "GlyphDelete",
+  "type": "object"
+}

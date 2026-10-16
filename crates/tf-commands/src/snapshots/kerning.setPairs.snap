@@ -1,0 +1,51 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`kerning.setPairs`: add or change kerning pairs of one source.",
+  "properties": {
+    "pairs": {
+      "description": "The pairs and their values.",
+      "items": {
+        "additionalProperties": false,
+        "description": "A kerning pair and its value. A side is a glyph name or a kerning group name\n(`public.kern1.*` on the left, `public.kern2.*` on the right).",
+        "properties": {
+          "left": {
+            "description": "First (left) side.",
+            "type": "string"
+          },
+          "right": {
+            "description": "Second (right) side.",
+            "type": "string"
+          },
+          "value": {
+            "description": "Kerning value in font units.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "left",
+          "right",
+          "value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "source": {
+      "description": "The source; `null` means the default source.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "pairs",
+    "source"
+  ],
+  "title": "KerningSetPairs",
+  "type": "object"
+}

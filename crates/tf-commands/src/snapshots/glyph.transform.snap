@@ -1,0 +1,101 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.transform`: apply an affine transform to a glyph layer or part of it.",
+  "properties": {
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "type": "integer"
+    },
+    "matrix": {
+      "additionalProperties": false,
+      "description": "The transform.",
+      "properties": {
+        "dx": {
+          "description": "`xOffset`, in font units.",
+          "type": "number"
+        },
+        "dy": {
+          "description": "`yOffset`, in font units.",
+          "type": "number"
+        },
+        "xx": {
+          "description": "`xScale`.",
+          "type": "number"
+        },
+        "xy": {
+          "description": "`xyScale`.",
+          "type": "number"
+        },
+        "yx": {
+          "description": "`yxScale`.",
+          "type": "number"
+        },
+        "yy": {
+          "description": "`yScale`.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dx",
+        "dy",
+        "xx",
+        "xy",
+        "yx",
+        "yy"
+      ],
+      "type": "object"
+    },
+    "selection": {
+      "additionalProperties": false,
+      "description": "The parts to transform; `null` transforms every point, component and anchor.",
+      "properties": {
+        "anchors": {
+          "description": "Anchor indices.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "components": {
+          "description": "Component indices.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "points": {
+          "description": "Point indices into the layer's packed outline; order and repeats do not matter.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "anchors",
+        "components",
+        "points"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "layer",
+    "matrix",
+    "selection"
+  ],
+  "title": "GlyphTransform",
+  "type": "object"
+}

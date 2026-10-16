@@ -1,0 +1,19 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`doc.close`: close the document.",
+  "properties": {
+    "discard": {
+      "description": "Close even with unsaved changes, which are lost.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "discard"
+  ],
+  "title": "DocClose",
+  "type": "object"
+}

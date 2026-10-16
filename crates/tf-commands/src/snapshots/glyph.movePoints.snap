@@ -1,0 +1,40 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.movePoints`: move points to absolute positions.",
+  "properties": {
+    "coords": {
+      "description": "The new absolute positions, `[x0, y0, x1, y1, …]`, one pair per index.",
+      "items": {
+        "type": "number"
+      },
+      "type": "array"
+    },
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    },
+    "indices": {
+      "description": "Point indices into the layer's packed outline, strictly increasing.",
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "layer": {
+      "description": "The layer.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "coords",
+    "id",
+    "indices",
+    "layer"
+  ],
+  "title": "GlyphMovePoints",
+  "type": "object"
+}

@@ -1,0 +1,69 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.addComponent`: add a component that refers to another glyph by name.",
+  "properties": {
+    "base": {
+      "description": "Name of the base glyph.",
+      "type": "string"
+    },
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "type": "integer"
+    },
+    "transform": {
+      "additionalProperties": false,
+      "description": "Placement of the base glyph.",
+      "properties": {
+        "dx": {
+          "description": "`xOffset`, in font units.",
+          "type": "number"
+        },
+        "dy": {
+          "description": "`yOffset`, in font units.",
+          "type": "number"
+        },
+        "xx": {
+          "description": "`xScale`.",
+          "type": "number"
+        },
+        "xy": {
+          "description": "`xyScale`.",
+          "type": "number"
+        },
+        "yx": {
+          "description": "`yxScale`.",
+          "type": "number"
+        },
+        "yy": {
+          "description": "`yScale`.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dx",
+        "dy",
+        "xx",
+        "xy",
+        "yx",
+        "yy"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "base",
+    "id",
+    "layer",
+    "transform"
+  ],
+  "title": "GlyphAddComponent",
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`query.features`: the `features.fea` text of one source.",
+  "properties": {
+    "source": {
+      "description": "The source; `null` means the default source.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "title": "QueryFeatures",
+  "type": "object"
+}

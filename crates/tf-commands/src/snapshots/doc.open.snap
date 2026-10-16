@@ -1,0 +1,19 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`doc.open`: open a `.ufo` folder, a `.designspace` file or a `.typefaced` package.",
+  "properties": {
+    "path": {
+      "description": "Path of the file or folder.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "DocOpen",
+  "type": "object"
+}

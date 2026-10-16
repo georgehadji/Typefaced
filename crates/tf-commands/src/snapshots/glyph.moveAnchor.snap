@@ -1,0 +1,39 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.moveAnchor`: move an anchor to an absolute position.",
+  "properties": {
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    },
+    "index": {
+      "description": "Anchor index.",
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "type": "integer"
+    },
+    "x": {
+      "description": "New x in font units.",
+      "type": "number"
+    },
+    "y": {
+      "description": "New y in font units.",
+      "type": "number"
+    }
+  },
+  "required": [
+    "id",
+    "index",
+    "layer",
+    "x",
+    "y"
+  ],
+  "title": "GlyphMoveAnchor",
+  "type": "object"
+}

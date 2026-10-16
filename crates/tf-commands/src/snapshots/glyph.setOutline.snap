@@ -1,0 +1,58 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.setOutline`: replace the contours of one glyph layer.",
+  "properties": {
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "type": "integer"
+    },
+    "outline": {
+      "additionalProperties": false,
+      "description": "The new contours.",
+      "properties": {
+        "contourEnds": {
+          "description": "The index of the last point of each contour, strictly increasing; the last one is\nthe last point, so the contours cover every point.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "coords": {
+          "description": "Interleaved `[x0, y0, x1, y1, …]` in font units; finite.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "flags": {
+          "description": "One byte per point: the point type (`0` off-curve, `1` line, `2` curve,\n`3` qcurve) plus `4` for a smooth on-curve point.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "contourEnds",
+        "coords",
+        "flags"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "layer",
+    "outline"
+  ],
+  "title": "GlyphSetOutline",
+  "type": "object"
+}

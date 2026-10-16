@@ -1,0 +1,51 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`kerning.setGroup`: set the members of a kerning group of one source.",
+  "properties": {
+    "members": {
+      "description": "Glyph names; empty removes the group.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "name": {
+      "description": "Group name without the `public.kern1.`/`public.kern2.` prefix.",
+      "type": "string"
+    },
+    "side": {
+      "anyOf": [
+        {
+          "const": "first",
+          "description": "Left side: the group is stored as `public.kern1.<name>`.",
+          "type": "string"
+        },
+        {
+          "const": "second",
+          "description": "Right side: the group is stored as `public.kern2.<name>`.",
+          "type": "string"
+        }
+      ],
+      "description": "The kerning side."
+    },
+    "source": {
+      "description": "The source; `null` means the default source.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "members",
+    "name",
+    "side",
+    "source"
+  ],
+  "title": "KerningSetGroup",
+  "type": "object"
+}

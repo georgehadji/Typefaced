@@ -1,0 +1,45 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`doc.saveAs`: save the document to a new path and format.",
+  "properties": {
+    "format": {
+      "anyOf": [
+        {
+          "const": "ufo",
+          "description": "A UFO 3 folder (single-source documents only).",
+          "type": "string"
+        },
+        {
+          "const": "designspace",
+          "description": "A designspace 5 file with its master UFOs.",
+          "type": "string"
+        },
+        {
+          "const": "typefaced",
+          "description": "A `.typefaced` package.",
+          "type": "string"
+        }
+      ],
+      "description": "The format to write."
+    },
+    "overwrite": {
+      "description": "Replace an existing target (destructive).",
+      "type": "boolean"
+    },
+    "path": {
+      "description": "The target path.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format",
+    "overwrite",
+    "path"
+  ],
+  "title": "DocSaveAs",
+  "type": "object"
+}

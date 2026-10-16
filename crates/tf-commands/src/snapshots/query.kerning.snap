@@ -1,0 +1,49 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`query.kerning`: kerning pairs and kerning groups of one source.",
+  "properties": {
+    "pairs": {
+      "description": "Only these pairs; `null` returns every pair.",
+      "items": {
+        "additionalProperties": false,
+        "description": "A kerning pair without its value.",
+        "properties": {
+          "left": {
+            "description": "First (left) side.",
+            "type": "string"
+          },
+          "right": {
+            "description": "Second (right) side.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "left",
+          "right"
+        ],
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "source": {
+      "description": "The source; `null` means the default source.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "pairs",
+    "source"
+  ],
+  "title": "QueryKerning",
+  "type": "object"
+}

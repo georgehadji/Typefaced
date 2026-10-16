@@ -1,0 +1,59 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.insertPoint`: insert a point into a contour.",
+  "properties": {
+    "contour": {
+      "description": "The contour index.",
+      "type": "integer"
+    },
+    "id": {
+      "description": "The glyph.",
+      "type": "integer"
+    },
+    "index": {
+      "description": "The position inside the contour; the point is inserted before it. The contour's\npoint count appends the point at the end.",
+      "type": "integer"
+    },
+    "layer": {
+      "description": "The layer.",
+      "type": "integer"
+    },
+    "point": {
+      "additionalProperties": false,
+      "description": "The new point.",
+      "properties": {
+        "flags": {
+          "description": "Point flags: 0 off-curve, 1 line, 2 curve, 3 qcurve, plus 4 for a smooth on-curve\npoint.",
+          "type": "integer"
+        },
+        "x": {
+          "description": "X in font units.",
+          "type": "number"
+        },
+        "y": {
+          "description": "Y in font units.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "flags",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contour",
+    "id",
+    "index",
+    "layer",
+    "point"
+  ],
+  "title": "GlyphInsertPoint",
+  "type": "object"
+}

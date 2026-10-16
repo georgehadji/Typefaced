@@ -1,0 +1,32 @@
+---
+source: crates/tf-commands/src/registry.rs
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`glyph.create`: add a glyph to every source.",
+  "properties": {
+    "codepoints": {
+      "description": "Unicode code points (scalar values).",
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "name": {
+      "description": "Glyph name, unique in the font.",
+      "type": "string"
+    },
+    "width": {
+      "description": "Advance width in font units, in every layer.",
+      "type": "number"
+    }
+  },
+  "required": [
+    "codepoints",
+    "name",
+    "width"
+  ],
+  "title": "GlyphCreate",
+  "type": "object"
+}
