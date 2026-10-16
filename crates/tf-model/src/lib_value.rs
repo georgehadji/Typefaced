@@ -8,7 +8,8 @@ use indexmap::IndexMap;
 pub type LibDict = IndexMap<String, LibValue>;
 
 /// The lib key norad manages itself: it moves object libs onto their objects when it loads a
-/// UFO and refuses to save a lib that still holds it. Model libs never contain it.
+/// UFO and refuses to save a font or glyph lib that still holds it. Font and glyph libs in the
+/// model never contain it; layer libs may, because norad treats it as an ordinary key there.
 pub const OBJECT_LIBS_KEY: &str = "public.objectLibs";
 
 /// One XML plist value.

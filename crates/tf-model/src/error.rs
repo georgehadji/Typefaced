@@ -100,3 +100,29 @@ pub enum ModelError {
     #[error("the glyph table is full")]
     TableFull,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn errors_name_the_owner_of_the_objects() {
+        let owner = ObjectOwner::GlyphLayer {
+            glyph: Name::new("A").unwrap(),
+            layer: LayerId(2),
+        };
+        let error = ModelError::ObjectLibWithoutIdentifier { owner };
+        assert_eq!(
+            error.to_string(),
+            "glyph A, LayerId#2: an object has a lib but no identifier"
+        );
+        let info = ModelError::DuplicateIdentifier {
+            owner: ObjectOwner::FontInfo(SourceId(1)),
+            identifier: Identifier::new("g").unwrap(),
+        };
+        assert_eq!(
+            info.to_string(),
+            "font info of SourceId#1: identifier g appears twice"
+        );
+    }
+}

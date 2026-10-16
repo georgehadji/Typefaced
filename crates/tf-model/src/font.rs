@@ -5,7 +5,7 @@
 //! is a valid UFO point sequence; every `LayerId` a glyph or designspace master uses belongs
 //! to a source; layer IDs are unique across sources and layer names within a source; object
 //! identifiers are unique per glyph layer and per font info, and an object with a lib has an
-//! identifier; no lib holds `public.objectLibs`.
+//! identifier; no font (`lib.plist`) or glyph lib holds `public.objectLibs`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -288,8 +288,9 @@ fn check_source(
     check_font_info(id, &source.font_info)?;
     let mut ids = BTreeSet::new();
     let mut names = BTreeSet::new();
+    // Layer libs are not checked for `public.objectLibs`: norad treats it as an ordinary key
+    // there.
     for layer in &source.layers {
-        check_lib(&layer.lib)?;
         if taken.contains(&layer.id) || !ids.insert(layer.id) {
             return Err(ModelError::DuplicateLayerId(layer.id));
         }
@@ -493,10 +494,13 @@ mod tests {
         Arc::make_mut(&mut lib_key.lib).insert(OBJECT_LIBS_KEY.into(), LibValue::Boolean(true));
         assert!(font.add_source(SourceId(1), lib_key).is_err());
 
+        // norad manages the key only in font and glyph libs; a layer lib (layerinfo.plist)
+        // may hold it, and norad loads and saves it verbatim, so the model must accept it.
         let mut layer_key = second_source();
         Arc::make_mut(&mut layer_key.layers[0].lib)
             .insert(OBJECT_LIBS_KEY.into(), LibValue::Boolean(true));
-        assert!(font.add_source(SourceId(1), layer_key).is_err());
+        assert_eq!(font.add_source(SourceId(1), layer_key), Ok(()));
+        let mut font = self::font();
 
         // Font-info guidelines follow the object rules (checked at the source boundary).
         let mut guidelines = second_source();

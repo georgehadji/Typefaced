@@ -29,9 +29,10 @@
 //! | `Layer::path` (private: folder name) | shadow | — | G10: kept so existing folders keep their names |
 //! | `Layer::contents` (private: glyph name → `.glif` file name) | shadow | — | G10: kept so existing glyphs keep their file names |
 //! | `Layer::path_set` (private) | none | — | Derived from `.glif` file names |
-//! | `Layer::color`, `Layer::lib` | [`SourceLayer::color`], [`SourceLayer::lib`] | typed, opaque | `layerinfo.plist` |
+//! | `Layer::color`, `Layer::lib` | [`SourceLayer::color`], [`SourceLayer::lib`] | typed, opaque | `layerinfo.plist`. The layer lib may hold `public.objectLibs`: norad leaves it alone there |
 //! | `Layer::glyphs` (by name) | [`GlyphTable`]: [`Glyph::layers`] keyed by [`LayerId`] | typed | One glyph entity across all layers and sources |
-//! | `Font::lib` | [`Source::lib`] | opaque | Never holds `public.objectLibs` ([`OBJECT_LIBS_KEY`]) |
+//! | `Font::lib` | [`Source::lib`] | opaque | Never holds `public.objectLibs` ([`OBJECT_LIBS_KEY`]). norad strips it only while reading `fontinfo.plist`, so a UFO 3 with the key in `lib.plist` but no `fontinfo.plist` (or a UFO 1/2) keeps it and norad itself cannot save that font: `tf-io` must refuse it with a stable error code or drop the key and report it as a G1(d) loss (decide in Step 9) |
+//! | plist `Uid` values (binary plists only) | none | — | [`LibValue`] has no `Uid` variant; UFO plists are XML, so `tf-io` refuses a binary-plist `Uid` (Step 9) |
 //! | `Font::groups` | [`Source::groups`] (`imbl::OrdMap`) | typed | `kerning.setGroup`, `glyph.rename` |
 //! | `Font::kerning` | [`Source::kerning`] (`imbl::OrdMap<(Name, Name), f64>`) | typed | `kerning.*`, `glyph.rename`. A first side with no pairs (empty inner dict) has no home |
 //! | `Font::features` | [`Source::features`] | typed (text) | `features.setCode` |
