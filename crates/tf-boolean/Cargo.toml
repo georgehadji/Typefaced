@@ -11,15 +11,15 @@ description = "Boolean engine adapter: the tf-geometry BooleanEngine port on lin
 layer = "adapter"
 
 [dependencies]
-kurbo = "=0.13.1"
+kurbo = { workspace = true }
 # Beta software (R10): pinned. An upgrade reruns the 581 regression cases (ADR-0008).
 linesweeper = { workspace = true }
 tf-geometry = { path = "../tf-geometry" }
 
 [dev-dependencies]
 # The same pin and features as tf-compile, so its resolved features do not change.
-norad = { version = "=0.18.4", default-features = false, features = ["kurbo"] }
-proptest = "1"
+norad = { workspace = true, features = ["kurbo"] }
+proptest = { workspace = true }
 
 # Plain timing loop; `cargo bench -p tf-boolean`.
 [[bench]]
