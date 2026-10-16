@@ -8,14 +8,10 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "layer": {
       "description": "The layer.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "name": {
@@ -24,12 +20,10 @@ source: crates/tf-commands/src/registry.rs
     },
     "x": {
       "description": "X in font units.",
-      "format": "double",
       "type": "number"
     },
     "y": {
       "description": "Y in font units.",
-      "format": "double",
       "type": "number"
     }
   },

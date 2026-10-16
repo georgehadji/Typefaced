@@ -8,30 +8,22 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "index": {
       "description": "Anchor index.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "layer": {
       "description": "The layer.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "x": {
       "description": "New x in font units.",
-      "format": "double",
       "type": "number"
     },
     "y": {
       "description": "New y in font units.",
-      "format": "double",
       "type": "number"
     }
   },

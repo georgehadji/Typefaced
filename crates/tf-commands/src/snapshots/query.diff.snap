@@ -8,8 +8,6 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "sandbox": {
       "description": "The sandbox.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     }
   },

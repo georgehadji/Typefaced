@@ -8,14 +8,10 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "layer": {
       "description": "The layer.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "matrix": {
@@ -24,32 +20,26 @@ source: crates/tf-commands/src/registry.rs
       "properties": {
         "dx": {
           "description": "`xOffset`, in font units.",
-          "format": "double",
           "type": "number"
         },
         "dy": {
           "description": "`yOffset`, in font units.",
-          "format": "double",
           "type": "number"
         },
         "xx": {
           "description": "`xScale`.",
-          "format": "double",
           "type": "number"
         },
         "xy": {
           "description": "`xyScale`.",
-          "format": "double",
           "type": "number"
         },
         "yx": {
           "description": "`yxScale`.",
-          "format": "double",
           "type": "number"
         },
         "yy": {
           "description": "`yScale`.",
-          "format": "double",
           "type": "number"
         }
       },
@@ -70,8 +60,6 @@ source: crates/tf-commands/src/registry.rs
         "anchors": {
           "description": "Anchor indices.",
           "items": {
-            "format": "uint32",
-            "minimum": 0,
             "type": "integer"
           },
           "type": "array"
@@ -79,17 +67,13 @@ source: crates/tf-commands/src/registry.rs
         "components": {
           "description": "Component indices.",
           "items": {
-            "format": "uint32",
-            "minimum": 0,
             "type": "integer"
           },
           "type": "array"
         },
         "points": {
-          "description": "Point indices into the layer's packed outline.",
+          "description": "Point indices into the layer's packed outline; order and repeats do not matter.",
           "items": {
-            "format": "uint32",
-            "minimum": 0,
             "type": "integer"
           },
           "type": "array"

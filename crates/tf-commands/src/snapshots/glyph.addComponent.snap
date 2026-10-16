@@ -12,14 +12,10 @@ source: crates/tf-commands/src/registry.rs
     },
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "layer": {
       "description": "The layer.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "transform": {
@@ -28,32 +24,26 @@ source: crates/tf-commands/src/registry.rs
       "properties": {
         "dx": {
           "description": "`xOffset`, in font units.",
-          "format": "double",
           "type": "number"
         },
         "dy": {
           "description": "`yOffset`, in font units.",
-          "format": "double",
           "type": "number"
         },
         "xx": {
           "description": "`xScale`.",
-          "format": "double",
           "type": "number"
         },
         "xy": {
           "description": "`xyScale`.",
-          "format": "double",
           "type": "number"
         },
         "yx": {
           "description": "`yxScale`.",
-          "format": "double",
           "type": "number"
         },
         "yy": {
           "description": "`yScale`.",
-          "format": "double",
           "type": "number"
         }
       },

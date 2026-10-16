@@ -8,8 +8,6 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "name": {

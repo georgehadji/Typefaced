@@ -8,20 +8,14 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "index": {
       "description": "Component index.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "layer": {
       "description": "The layer.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     }
   },

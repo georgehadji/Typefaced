@@ -9,8 +9,6 @@ source: crates/tf-commands/src/registry.rs
     "codepoints": {
       "description": "Unicode code points (scalar values).",
       "items": {
-        "format": "uint32",
-        "minimum": 0,
         "type": "integer"
       },
       "type": "array"
@@ -21,7 +19,6 @@ source: crates/tf-commands/src/registry.rs
     },
     "width": {
       "description": "Advance width in font units, in every layer.",
-      "format": "double",
       "type": "number"
     }
   },

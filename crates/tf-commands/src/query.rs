@@ -38,6 +38,8 @@ pub struct QueryFontSummary {}
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryListGlyphs {
     /// Only glyphs whose name contains this text; `null` lists every glyph.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<String>)]
     pub filter: Option<String>,
     /// Number of matching glyphs to skip.
     pub offset: u32,
@@ -52,6 +54,8 @@ pub struct QueryGetGlyph {
     /// The glyph.
     pub id: GlyphId,
     /// The optional parts to include; `null` includes all of them.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<Vec<GlyphField>>)]
     pub fields: Option<Vec<GlyphField>>,
 }
 
@@ -60,8 +64,12 @@ pub struct QueryGetGlyph {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryKerning {
     /// The source; `null` means the default source.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<SourceId>)]
     pub source: Option<SourceId>,
     /// Only these pairs; `null` returns every pair.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<Vec<KerningPairKey>>)]
     pub pairs: Option<Vec<KerningPairKey>>,
 }
 
@@ -70,6 +78,8 @@ pub struct QueryKerning {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryFeatures {
     /// The source; `null` means the default source.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<SourceId>)]
     pub source: Option<SourceId>,
 }
 

@@ -4,7 +4,10 @@
 //!
 //! Schemas follow the strict tool-schema shape of §5.11 already: payloads are inlined
 //! (no `$defs`), every object has `additionalProperties: false` and lists every property
-//! in `required`, and optional fields are nullable. The strict-mode contract test against
+//! in `required`, and optional fields are nullable. They also leave out what Claude's strict
+//! tool schemas do not support: numeric and length constraints, `format` (schemars only
+//! writes number formats such as `uint32` here) and `oneOf` (written as `anyOf`). Serde
+//! still refuses a negative or too large integer. The strict-mode contract test against
 //! the Claude API limits comes in M3.
 
 use schemars::transform::RecursiveTransform;
@@ -569,9 +572,36 @@ pub const FONT_INFO_KEYS: &[(&str, InfoValueType)] = {
 pub fn strict_schema<T: JsonSchema>() -> Schema {
     SchemaSettings::draft2020_12()
         .with(|settings| settings.inline_subschemas = true)
+        .with_transform(RecursiveTransform(drop_unsupported))
         .with_transform(RecursiveTransform(close_object))
         .into_generator()
         .into_root_schema_for::<T>()
+}
+
+/// Keywords that Claude's strict tool schemas refuse, and that schemars writes for numbers.
+const UNSUPPORTED: &[&str] = &[
+    "format",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minLength",
+    "maxLength",
+];
+
+/// Removes the [`UNSUPPORTED`] keywords and writes `oneOf` as `anyOf` (schemars uses
+/// `oneOf` for enums whose variants are mutually exclusive anyway).
+fn drop_unsupported(schema: &mut Schema) {
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+    UNSUPPORTED.iter().for_each(|keyword| {
+        object.remove(*keyword);
+    });
+    if let Some(variants) = object.remove("oneOf") {
+        object.insert("anyOf".to_owned(), variants);
+    }
 }
 
 /// Makes an object schema strict: no extra properties, every property required (sorted,
@@ -695,35 +725,139 @@ mod tests {
 
     #[test]
     fn kinds_and_flags_follow_appendix_a() {
-        let kind = |id| command(id).kind;
+        use CommandId as C;
+        // (kind, AI exposed, workspaces) for every command; no wildcard, so a new command
+        // has to state its own.
         for &id in CommandId::ALL {
             let expected = match id {
-                CommandId::DocNew
-                | CommandId::DocOpen
-                | CommandId::DocSave
-                | CommandId::DocSaveAs
-                | CommandId::DocClose => Kind::E,
-                CommandId::GlyphDelete => Kind::D,
-                _ => Kind::M,
+                C::DocNew | C::DocOpen | C::DocSave | C::DocSaveAs | C::DocClose => {
+                    (Kind::E, false, BOTH)
+                }
+                C::DocUndo | C::DocRedo => (Kind::M, false, BOTH),
+                C::GlyphDelete => (Kind::D, true, BOTH),
+                C::GlyphMovePoints
+                | C::GlyphInsertPoint
+                | C::GlyphDeletePoints
+                | C::GlyphToggleSmooth => (Kind::M, false, BOTH),
+                C::FeaturesSetCode => (Kind::M, true, WORKBENCH),
+                C::GlyphCreate
+                | C::GlyphRename
+                | C::GlyphDuplicate
+                | C::GlyphSetCodepoints
+                | C::GlyphSetWidth
+                | C::GlyphSetOutline
+                | C::GlyphTransform
+                | C::GlyphAddComponent
+                | C::GlyphRemoveComponent
+                | C::GlyphDecompose
+                | C::GlyphAddAnchor
+                | C::GlyphMoveAnchor
+                | C::GlyphRemoveAnchor
+                | C::FontSetInfo
+                | C::FontSetVerticalMetrics
+                | C::KerningSetPairs
+                | C::KerningRemovePairs
+                | C::KerningSetGroup => (Kind::M, true, BOTH),
             };
-            assert_eq!(kind(id), expected, "{}", id.as_str());
-            assert!(!command(id).parallel_safe);
+            let d = command(id);
+            assert_eq!((d.kind, d.ai_exposed, d.workspaces), expected, "{}", d.id);
+            assert!(!d.parallel_safe, "{}", d.id);
         }
         for &id in QueryId::ALL {
-            assert_eq!(query(id).kind, Kind::Q);
-            assert!(query(id).parallel_safe);
+            let ai_exposed = match id {
+                QueryId::Diff => false,
+                QueryId::FontSummary
+                | QueryId::ListGlyphs
+                | QueryId::GetGlyph
+                | QueryId::Kerning
+                | QueryId::Features => true,
+            };
+            let d = query(id);
+            assert_eq!(
+                (d.kind, d.ai_exposed, d.workspaces),
+                (Kind::Q, ai_exposed, BOTH)
+            );
+            assert!(d.parallel_safe, "{}", d.id);
         }
-        let ui_only = [
-            CommandId::GlyphMovePoints,
-            CommandId::GlyphInsertPoint,
-            CommandId::GlyphDeletePoints,
-            CommandId::GlyphToggleSmooth,
+    }
+
+    #[test]
+    fn a_payload_without_any_one_of_its_fields_is_refused() {
+        // Strict schemas require every field, `null` included: a dropped key must not
+        // silently mean "remove", "everything" or "the default source".
+        fn without_each_key(example: &str) -> Vec<Value> {
+            let example: Value = serde_json::from_str(example).unwrap();
+            let args = example["args"].as_object().unwrap();
+            args.keys()
+                .map(|key| {
+                    let mut smaller = example.clone();
+                    smaller["args"].as_object_mut().unwrap().remove(key);
+                    smaller
+                })
+                .collect()
+        }
+        for &id in CommandId::ALL {
+            for payload in without_each_key(command(id).example) {
+                assert!(
+                    serde_json::from_value::<Command>(payload.clone()).is_err(),
+                    "{payload}"
+                );
+            }
+        }
+        for &id in QueryId::ALL {
+            for payload in without_each_key(query(id).example) {
+                assert!(
+                    serde_json::from_value::<Query>(payload.clone()).is_err(),
+                    "{payload}"
+                );
+            }
+        }
+        let info = |field: Value| {
+            serde_json::from_value::<Command>(serde_json::json!({
+                "id": "font.setInfo", "args": { "source": null, "fields": [field] }
+            }))
+        };
+        assert!(info(serde_json::json!({ "key": "note" })).is_err());
+        assert!(info(serde_json::json!({ "key": "note", "value": null })).is_ok());
+    }
+
+    #[test]
+    fn schemas_use_no_keyword_strict_tool_schemas_refuse() {
+        // Claude's strict tool schemas support no numeric or length constraints, `format`
+        // only for a few string formats, and `anyOf` but not `oneOf`.
+        const REFUSED: &[&str] = &[
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "multipleOf",
+            "minLength",
+            "maxLength",
+            "oneOf",
         ];
-        for id in ui_only {
-            assert!(!command(id).ai_exposed, "{}", id.as_str());
+        fn check(value: &Value, at: &str) {
+            if let Some(object) = value.as_object() {
+                for (key, child) in object {
+                    // Inside `properties` the keys are field names, not keywords.
+                    if key == "properties" {
+                        child
+                            .as_object()
+                            .unwrap()
+                            .values()
+                            .for_each(|v| check(v, at));
+                        continue;
+                    }
+                    assert!(!REFUSED.contains(&key.as_str()), "{key} at {at}");
+                    assert!(key != "format", "format {child} at {at}");
+                    check(child, at);
+                }
+            } else if let Some(array) = value.as_array() {
+                array.iter().for_each(|v| check(v, at));
+            }
         }
-        assert!(command(CommandId::GlyphTransform).ai_exposed);
-        assert!(!query(QueryId::Diff).ai_exposed);
+        for (d, schema) in all() {
+            check(schema.as_value(), d.id);
+        }
     }
 
     #[test]

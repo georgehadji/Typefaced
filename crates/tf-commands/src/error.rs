@@ -129,6 +129,46 @@ mod tests {
     }
 
     #[test]
+    fn the_codes_are_exactly_the_m1_list_of_the_plan() {
+        // The wire strings are a stable contract (plan Step 3, *Errors*).
+        let codes: Vec<&str> = ErrorCode::ALL.iter().map(|c| c.as_str()).collect();
+
+        assert_eq!(
+            codes,
+            [
+                "E_GLYPH_NOT_FOUND",
+                "E_LAYER_NOT_FOUND",
+                "E_SOURCE_NOT_FOUND",
+                "E_NAME_IN_USE",
+                "E_INVALID_NAME",
+                "E_CODEPOINT_IN_USE",
+                "E_GLYPH_IN_USE",
+                "E_INVALID_OUTLINE",
+                "E_INVALID_FIELD",
+                "E_COMPONENT_DEPTH",
+                "E_COMPONENT_CYCLE",
+                "E_STALE_BASE",
+                "E_NO_TRANSACTION",
+                "E_TRANSACTION_OPEN",
+                "E_SANDBOX_NOT_FOUND",
+                "E_NOTHING_TO_UNDO",
+                "E_NOTHING_TO_REDO",
+                "E_NOT_IMPLEMENTED",
+                "E_READ_ONLY",
+                "E_TARGET_EXISTS",
+                "E_UNSAVED_CHANGES",
+                "E_EXTERNAL_CHANGE",
+                "E_LIMIT_EXCEEDED",
+                "E_PATH_OUTSIDE_PROJECT",
+                "E_UFO_UNSUPPORTED_XML",
+                "E_PACKAGE_INVALID",
+                "E_SAVE_FAILED",
+                "E_IO",
+            ]
+        );
+    }
+
+    #[test]
     fn a_code_serializes_as_its_string_and_back() {
         for &code in ErrorCode::ALL {
             let value = serde_json::to_value(code).unwrap();

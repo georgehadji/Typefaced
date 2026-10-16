@@ -8,7 +8,6 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "ascender": {
       "description": "Ascender; `null` leaves it unchanged.",
-      "format": "double",
       "type": [
         "number",
         "null"
@@ -16,7 +15,6 @@ source: crates/tf-commands/src/registry.rs
     },
     "capHeight": {
       "description": "Cap height; `null` leaves it unchanged.",
-      "format": "double",
       "type": [
         "number",
         "null"
@@ -24,7 +22,6 @@ source: crates/tf-commands/src/registry.rs
     },
     "descender": {
       "description": "Descender (usually negative); `null` leaves it unchanged.",
-      "format": "double",
       "type": [
         "number",
         "null"
@@ -32,8 +29,6 @@ source: crates/tf-commands/src/registry.rs
     },
     "source": {
       "description": "The source; `null` means the default source.",
-      "format": "uint32",
-      "minimum": 0,
       "type": [
         "integer",
         "null"
@@ -41,7 +36,6 @@ source: crates/tf-commands/src/registry.rs
     },
     "xHeight": {
       "description": "x-height; `null` leaves it unchanged.",
-      "format": "double",
       "type": [
         "number",
         "null"

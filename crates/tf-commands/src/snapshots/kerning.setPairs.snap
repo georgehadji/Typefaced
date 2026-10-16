@@ -22,7 +22,6 @@ source: crates/tf-commands/src/registry.rs
           },
           "value": {
             "description": "Kerning value in font units.",
-            "format": "double",
             "type": "number"
           }
         },
@@ -37,8 +36,6 @@ source: crates/tf-commands/src/registry.rs
     },
     "source": {
       "description": "The source; `null` means the default source.",
-      "format": "uint32",
-      "minimum": 0,
       "type": [
         "integer",
         "null"

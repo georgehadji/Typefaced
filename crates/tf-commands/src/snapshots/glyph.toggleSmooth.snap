@@ -8,23 +8,17 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "indices": {
-      "description": "Point indices into the layer's packed outline.",
+      "description": "Point indices of on-curve points; order and repeats do not matter.",
       "items": {
-        "format": "uint32",
-        "minimum": 0,
         "type": "integer"
       },
       "type": "array"
     },
     "layer": {
       "description": "The layer.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     }
   },

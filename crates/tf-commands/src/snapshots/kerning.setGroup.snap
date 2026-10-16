@@ -18,8 +18,7 @@ source: crates/tf-commands/src/registry.rs
       "type": "string"
     },
     "side": {
-      "description": "The kerning side.",
-      "oneOf": [
+      "anyOf": [
         {
           "const": "first",
           "description": "Left side: the group is stored as `public.kern1.<name>`.",
@@ -30,12 +29,11 @@ source: crates/tf-commands/src/registry.rs
           "description": "Right side: the group is stored as `public.kern2.<name>`.",
           "type": "string"
         }
-      ]
+      ],
+      "description": "The kerning side."
     },
     "source": {
       "description": "The source; `null` means the default source.",
-      "format": "uint32",
-      "minimum": 0,
       "type": [
         "integer",
         "null"

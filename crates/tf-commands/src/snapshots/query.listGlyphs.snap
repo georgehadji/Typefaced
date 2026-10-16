@@ -15,14 +15,10 @@ source: crates/tf-commands/src/registry.rs
     },
     "limit": {
       "description": "Largest number of glyphs to return.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "offset": {
       "description": "Number of matching glyphs to skip.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     }
   },

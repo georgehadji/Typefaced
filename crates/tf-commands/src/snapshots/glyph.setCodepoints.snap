@@ -9,16 +9,12 @@ source: crates/tf-commands/src/registry.rs
     "codepoints": {
       "description": "Unicode code points; empty removes them all.",
       "items": {
-        "format": "uint32",
-        "minimum": 0,
         "type": "integer"
       },
       "type": "array"
     },
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     }
   },

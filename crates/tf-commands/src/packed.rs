@@ -13,11 +13,18 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tf_geometry::flags;
 
-use crate::command::{GlyphId, GlyphMovePoints, LayerId};
+use crate::command::{GlyphId, GlyphMovePoints, LayerId, Point};
 use crate::error::{CommandError, ErrorCode};
 
 /// The flag bits a point may set: the point type and the smooth bit.
 const VALID_FLAG_BITS: u8 = flags::TYPE_MASK | flags::SMOOTH;
+
+/// Whether a flag byte sets only known bits, and sets the smooth bit only on an
+/// on-curve point (UFO: `smooth` applies to on-curve points only).
+fn valid_flag(flag: u8) -> bool {
+    flag & !VALID_FLAG_BITS == 0
+        && !(flag & flags::TYPE_MASK == flags::OFF_CURVE && flag & flags::SMOOTH != 0)
+}
 
 /// An outline as three parallel arrays, the layout the UI holds in typed arrays.
 /// Contours are closed; `contour_ends` holds the index of each contour's last point.
@@ -30,7 +37,7 @@ pub struct PackedOutline {
     /// Interleaved `[x0, y0, x1, y1, …]` in font units; finite.
     pub coords: Vec<f64>,
     /// One byte per point: the point type (`0` off-curve, `1` line, `2` curve,
-    /// `3` qcurve) plus `4` for a smooth point.
+    /// `3` qcurve) plus `4` for a smooth on-curve point.
     pub flags: Vec<u8>,
     /// The index of the last point of each contour, strictly increasing; the last one is
     /// the last point, so the contours cover every point.
@@ -66,7 +73,7 @@ pub enum PackedError {
     /// A coordinate is NaN or infinite.
     #[error("coordinate {0} is not finite")]
     NonFinite(usize),
-    /// A flag sets unknown bits.
+    /// A flag sets unknown bits, or the smooth bit on an off-curve point.
     #[error("point {index} has invalid flags {flag:#04x}")]
     BadFlag {
         /// Point index.
@@ -112,7 +119,7 @@ impl PackedOutline {
         let n = self.point_count();
         u32::try_from(n).map_err(|_| PackedError::TooManyPoints(n))?;
         check_coords(&self.coords, n)?;
-        if let Some(index) = self.flags.iter().position(|f| f & !VALID_FLAG_BITS != 0) {
+        if let Some(index) = self.flags.iter().position(|&f| !valid_flag(f)) {
             return Err(PackedError::BadFlag {
                 index,
                 flag: self.flags[index],
@@ -207,6 +214,20 @@ impl GlyphMovePoints {
         };
         command.validate()?;
         Ok(command)
+    }
+}
+
+impl Point {
+    /// Checks the flag (as in a packed outline) and that the position is finite. The
+    /// engine checks the contour and the position in it against the glyph.
+    pub fn validate(&self) -> Result<(), PackedError> {
+        if !valid_flag(self.flags) {
+            return Err(PackedError::BadFlag {
+                index: 0,
+                flag: self.flags,
+            });
+        }
+        check_coords(&[self.x, self.y], 1)
     }
 }
 
@@ -392,16 +413,59 @@ mod tests {
     fn a_header_with_huge_counts_fails_without_allocating() {
         let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
 
+        // On a 32-bit target the size overflows `usize` and reads as truncated.
         assert!(matches!(
             PackedOutline::decode(&bytes),
-            Err(PackedError::Length { .. })
+            Err(PackedError::Length { .. } | PackedError::Truncated(_))
         ));
         let mut move_bytes = vec![0u8; 8];
         move_bytes.extend_from_slice(&u32::MAX.to_le_bytes());
         assert!(matches!(
             GlyphMovePoints::decode(&move_bytes),
-            Err(PackedError::Length { .. })
+            Err(PackedError::Length { .. } | PackedError::Truncated(_))
         ));
+    }
+
+    #[test]
+    fn a_smooth_off_curve_point_is_rejected() {
+        let outline = PackedOutline {
+            flags: vec![flags::LINE, flags::OFF_CURVE | flags::SMOOTH, flags::LINE],
+            ..triangle()
+        };
+
+        assert_eq!(
+            outline.validate(),
+            Err(PackedError::BadFlag {
+                index: 1,
+                flag: flags::SMOOTH
+            })
+        );
+    }
+
+    #[test]
+    fn a_point_to_insert_has_its_flags_and_position_checked() {
+        let point = |x: f64, flags: u8| Point { x, y: 0.0, flags };
+
+        assert_eq!(point(1.0, flags::CURVE | flags::SMOOTH).validate(), Ok(()));
+        assert_eq!(point(1.0, flags::OFF_CURVE).validate(), Ok(()));
+        assert_eq!(
+            point(1.0, 0b1000).validate(),
+            Err(PackedError::BadFlag {
+                index: 0,
+                flag: 0b1000
+            })
+        );
+        assert_eq!(
+            point(1.0, flags::SMOOTH).validate(),
+            Err(PackedError::BadFlag {
+                index: 0,
+                flag: flags::SMOOTH
+            })
+        );
+        assert_eq!(
+            point(f64::NAN, flags::LINE).validate(),
+            Err(PackedError::NonFinite(0))
+        );
     }
 
     #[test]
@@ -546,7 +610,7 @@ mod tests {
             (
                 -1e6..1e6f64,
                 -1e6..1e6f64,
-                0u8..=VALID_FLAG_BITS,
+                (0u8..=VALID_FLAG_BITS).prop_filter("smooth off-curve", |&f| valid_flag(f)),
                 any::<bool>(),
             ),
             0..64,

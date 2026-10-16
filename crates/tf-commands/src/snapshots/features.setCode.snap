@@ -8,8 +8,6 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "source": {
       "description": "The source; `null` means the default source.",
-      "format": "uint32",
-      "minimum": 0,
       "type": [
         "integer",
         "null"

@@ -2,8 +2,11 @@
 //! `u32` ids, plain structs, packed outlines; plan deviation 4). A [`Command`] serializes
 //! as `{"id": "glyph.create", "args": {…}}`.
 //!
-//! Every payload denies unknown fields, so serde accepts exactly what its strict schema
-//! describes. Optional fields (`Option`) may be `null` or left out.
+//! Every payload denies unknown fields, and every field is required: an optional field
+//! (`Option`) must be sent as `null` and is refused when left out, as its strict schema
+//! says. Serde is still looser than the schema in two ways: it accepts a payload as a
+//! positional array (`"args": [3, "a"]`), and it refuses `12.0` for an integer field.
+//! The clients send the object form that the schemas describe.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -25,7 +28,8 @@ id_type!(
 );
 
 /// A 2×3 affine matrix in the order of UFO's component transform
-/// (`xScale`, `xyScale`, `yxScale`, `yScale`, `xOffset`, `yOffset`).
+/// (`xScale`, `xyScale`, `yxScale`, `yScale`, `xOffset`, `yOffset`):
+/// `x' = xx·x + yx·y + dx`, `y' = xy·x + yy·y + dy`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Transform {
@@ -51,7 +55,9 @@ pub struct Point {
     pub x: f64,
     /// Y in font units.
     pub y: f64,
-    /// Point flags: 0 off-curve, 1 line, 2 curve, 3 qcurve, plus 4 for a smooth point.
+    /// Point flags: 0 off-curve, 1 line, 2 curve, 3 qcurve, plus 4 for a smooth on-curve
+    /// point.
+    // Serde does not check the flag: the reducer calls `validate` (in `packed.rs`).
     pub flags: u8,
 }
 
@@ -59,7 +65,7 @@ pub struct Point {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Selection {
-    /// Point indices into the layer's packed outline.
+    /// Point indices into the layer's packed outline; order and repeats do not matter.
     pub points: Vec<u32>,
     /// Component indices.
     pub components: Vec<u32>,
@@ -104,8 +110,9 @@ pub enum KerningSide {
 /// of numbers.
 //
 // Not a doc comment, so it stays out of the schema: the variant serde picks says little
-// about the key. JSON `400.0` arrives as `400` (`Integer`), `[]` as `IntegerList`, and
-// integers above `i32::MAX` as `Number`. Step 5 converts the value by the key's
+// about the key. JSON `400` arrives as `Integer` but `400.0` as `Number` (JavaScript
+// writes `400.0` as `400`), `[]` as `IntegerList`, and integers above `i32::MAX` as
+// `Number`. Step 5 converts the value by the key's
 // `InfoValueType` (an integral number is accepted for an integer key; either list
 // variant for a list key).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, JsonSchema)]
@@ -132,6 +139,8 @@ pub struct InfoField {
     /// The UFO key, e.g. `familyName` (the registry lists the accepted keys).
     pub key: String,
     /// The new value; `null` removes the key.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<InfoValue>)]
     pub value: Option<InfoValue>,
 }
 
@@ -307,7 +316,8 @@ pub struct GlyphInsertPoint {
     pub layer: LayerId,
     /// The contour index.
     pub contour: u32,
-    /// The position inside the contour; the point is inserted before it.
+    /// The position inside the contour; the point is inserted before it. The contour's
+    /// point count appends the point at the end.
     pub index: u32,
     /// The new point.
     pub point: Point,
@@ -321,7 +331,7 @@ pub struct GlyphDeletePoints {
     pub id: GlyphId,
     /// The layer.
     pub layer: LayerId,
-    /// Point indices into the layer's packed outline.
+    /// Point indices into the layer's packed outline; order and repeats do not matter.
     pub indices: Vec<u32>,
 }
 
@@ -333,7 +343,7 @@ pub struct GlyphToggleSmooth {
     pub id: GlyphId,
     /// The layer.
     pub layer: LayerId,
-    /// Point indices into the layer's packed outline.
+    /// Point indices of on-curve points; order and repeats do not matter.
     pub indices: Vec<u32>,
 }
 
@@ -348,6 +358,8 @@ pub struct GlyphTransform {
     /// The transform.
     pub matrix: Transform,
     /// The parts to transform; `null` transforms every point, component and anchor.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<Selection>)]
     pub selection: Option<Selection>,
 }
 
@@ -386,6 +398,8 @@ pub struct GlyphDecompose {
     /// The layer.
     pub layer: LayerId,
     /// Component indices; `null` decomposes all of them.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<Vec<u32>>)]
     pub indices: Option<Vec<u32>>,
 }
 
@@ -438,6 +452,8 @@ pub struct GlyphRemoveAnchor {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontSetInfo {
     /// The source; `null` means the default source.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<SourceId>)]
     pub source: Option<SourceId>,
     /// The keys to change.
     pub fields: Vec<InfoField>,
@@ -448,14 +464,24 @@ pub struct FontSetInfo {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontSetVerticalMetrics {
     /// The source; `null` means the default source.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<SourceId>)]
     pub source: Option<SourceId>,
     /// Ascender; `null` leaves it unchanged.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<f64>)]
     pub ascender: Option<f64>,
     /// Descender (usually negative); `null` leaves it unchanged.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<f64>)]
     pub descender: Option<f64>,
     /// x-height; `null` leaves it unchanged.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<f64>)]
     pub x_height: Option<f64>,
     /// Cap height; `null` leaves it unchanged.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<f64>)]
     pub cap_height: Option<f64>,
 }
 
@@ -464,6 +490,8 @@ pub struct FontSetVerticalMetrics {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KerningSetPairs {
     /// The source; `null` means the default source.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<SourceId>)]
     pub source: Option<SourceId>,
     /// The pairs and their values.
     pub pairs: Vec<KerningPair>,
@@ -474,6 +502,8 @@ pub struct KerningSetPairs {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KerningRemovePairs {
     /// The source; `null` means the default source.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<SourceId>)]
     pub source: Option<SourceId>,
     /// The pairs to remove.
     pub pairs: Vec<KerningPairKey>,
@@ -484,6 +514,8 @@ pub struct KerningRemovePairs {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KerningSetGroup {
     /// The source; `null` means the default source.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<SourceId>)]
     pub source: Option<SourceId>,
     /// The kerning side.
     pub side: KerningSide,
@@ -498,6 +530,8 @@ pub struct KerningSetGroup {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FeaturesSetCode {
     /// The source; `null` means the default source.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[specta(type = Option<SourceId>)]
     pub source: Option<SourceId>,
     /// The OpenType feature code.
     pub text: String,

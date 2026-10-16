@@ -8,26 +8,18 @@ source: crates/tf-commands/src/registry.rs
   "properties": {
     "contour": {
       "description": "The contour index.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "id": {
       "description": "The glyph.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "index": {
-      "description": "The position inside the contour; the point is inserted before it.",
-      "format": "uint32",
-      "minimum": 0,
+      "description": "The position inside the contour; the point is inserted before it. The contour's\npoint count appends the point at the end.",
       "type": "integer"
     },
     "layer": {
       "description": "The layer.",
-      "format": "uint32",
-      "minimum": 0,
       "type": "integer"
     },
     "point": {
@@ -35,20 +27,15 @@ source: crates/tf-commands/src/registry.rs
       "description": "The new point.",
       "properties": {
         "flags": {
-          "description": "Point flags: 0 off-curve, 1 line, 2 curve, 3 qcurve, plus 4 for a smooth point.",
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0,
+          "description": "Point flags: 0 off-curve, 1 line, 2 curve, 3 qcurve, plus 4 for a smooth on-curve\npoint.",
           "type": "integer"
         },
         "x": {
           "description": "X in font units.",
-          "format": "double",
           "type": "number"
         },
         "y": {
           "description": "Y in font units.",
-          "format": "double",
           "type": "number"
         }
       },

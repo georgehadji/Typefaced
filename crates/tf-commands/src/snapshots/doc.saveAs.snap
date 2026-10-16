@@ -7,8 +7,7 @@ source: crates/tf-commands/src/registry.rs
   "description": "`doc.saveAs`: save the document to a new path and format.",
   "properties": {
     "format": {
-      "description": "The format to write.",
-      "oneOf": [
+      "anyOf": [
         {
           "const": "ufo",
           "description": "A UFO 3 folder (single-source documents only).",
@@ -24,7 +23,8 @@ source: crates/tf-commands/src/registry.rs
           "description": "A `.typefaced` package.",
           "type": "string"
         }
-      ]
+      ],
+      "description": "The format to write."
     },
     "overwrite": {
       "description": "Replace an existing target (destructive).",

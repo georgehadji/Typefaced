@@ -26,12 +26,10 @@ source: crates/tf-commands/src/registry.rs
                   },
                   {
                     "description": "An integer.",
-                    "format": "int32",
                     "type": "integer"
                   },
                   {
                     "description": "A real number.",
-                    "format": "double",
                     "type": "number"
                   },
                   {
@@ -41,7 +39,6 @@ source: crates/tf-commands/src/registry.rs
                   {
                     "description": "A list of integers (bit lists, Panose, family class).",
                     "items": {
-                      "format": "int32",
                       "type": "integer"
                     },
                     "type": "array"
@@ -49,7 +46,6 @@ source: crates/tf-commands/src/registry.rs
                   {
                     "description": "A list of numbers (blue zones, stems).",
                     "items": {
-                      "format": "double",
                       "type": "number"
                     },
                     "type": "array"
@@ -74,8 +70,6 @@ source: crates/tf-commands/src/registry.rs
     },
     "source": {
       "description": "The source; `null` means the default source.",
-      "format": "uint32",
-      "minimum": 0,
       "type": [
         "integer",
         "null"

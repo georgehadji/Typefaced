@@ -10,8 +10,6 @@ source: crates/tf-commands/src/registry.rs
       "description": "The glyphs to delete.",
       "items": {
         "description": "A glyph in the document's glyph table.",
-        "format": "uint32",
-        "minimum": 0,
         "type": "integer"
       },
       "type": "array"
