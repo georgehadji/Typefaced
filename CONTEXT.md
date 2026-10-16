@@ -33,7 +33,7 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | Why a decision was made | `docs/adr/` |
 | Full architecture and roadmap | `docs/implementation-plan.md` |
 | Current work and what is left | `plans/` (status table) |
-| IPC command types | `crates/tf-commands/src/lib.rs` → `packages/bindings/src/index.ts` |
+| IPC command types | `crates/tf-commands/src/lib.rs` (`AppInfo`) → `packages/bindings/src/index.ts`; the command catalog (not exported in M1): `crates/tf-commands/src/command.rs`, `query.rs`, `registry.rs` |
 | Compiling a UFO or designspace to TTF, or a UFO to OTF | `crates/tf-compile/src/lib.rs` |
 | Writing a `CFF ` table from cubic outlines | `crates/tf-cff/src/lib.rs` |
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
