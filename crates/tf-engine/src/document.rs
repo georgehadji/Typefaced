@@ -21,6 +21,22 @@ use crate::reduce::{self, Event, Touched};
 pub struct DocState {
     pub font: Font,
     pub revision: Revision,
+    /// The most glyph-table slots any state of this document has had. Undo can restore a
+    /// font with fewer slots; `glyph.create` reserves up to this mark first, so a glyph ID
+    /// handed out once (to a client, a sandbox, a redo step) is never handed out again.
+    pub glyph_slots: usize,
+}
+
+impl DocState {
+    /// `font` at `revision`, its own slot count as the mark.
+    pub fn new(font: Font, revision: Revision) -> Self {
+        let glyph_slots = font.glyphs().slot_count();
+        Self {
+            font,
+            revision,
+            glyph_slots,
+        }
+    }
 }
 
 /// What a successful command, undo, redo, commit or rollback did.
@@ -43,7 +59,7 @@ struct Transaction {
 }
 
 /// One open document.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Document {
     state: Arc<DocState>,
     history: History,
@@ -66,10 +82,7 @@ impl Document {
     /// A document that keeps at most `cap` undo steps.
     pub fn with_history_cap(font: Font, cap: usize) -> Self {
         Self {
-            state: Arc::new(DocState {
-                font,
-                revision: Revision(0),
-            }),
+            state: Arc::new(DocState::new(font, Revision(0))),
             history: History::new(cap),
             txn: None,
             next_txn: 0,
@@ -108,6 +121,8 @@ impl Document {
         if let Some(open) = &self.txn {
             return Err(transaction_open(open.id));
         }
+        // The commits before a transaction never coalesce with the ones after it.
+        self.history.end_run();
         let id = TxnId(self.next_txn);
         self.next_txn = self.next_txn.wrapping_add(1);
         self.txn = Some(Transaction {
@@ -221,9 +236,11 @@ impl Document {
     }
 
     fn set_font(&mut self, font: Font) {
+        // Undo, redo and rollback keep the slot mark of the newest state.
         self.state = Arc::new(DocState {
             font,
             revision: self.state.revision.next(),
+            glyph_slots: self.state.glyph_slots,
         });
     }
 
@@ -362,7 +379,7 @@ mod tests {
         let txn = doc.begin("Space and width").unwrap();
         assert_eq!(doc.transaction(), Some(txn));
         assert_eq!(
-            code(doc.begin("nested").map(|_| unreachable())),
+            doc.begin("nested").unwrap_err().code,
             ErrorCode::TransactionOpen
         );
 
@@ -394,10 +411,6 @@ mod tests {
 
         doc.execute(&user(0), &UNDO).unwrap();
         assert_eq!(doc.state().font, initial);
-    }
-
-    fn unreachable() -> Outcome {
-        unreachable!("begin must fail")
     }
 
     #[test]
@@ -446,6 +459,44 @@ mod tests {
         doc.execute(&user(701), &delete(2)).unwrap();
         assert_eq!(doc.history().undo_len(), 5);
     }
+
+    #[test]
+    fn a_transaction_ends_the_coalescing_run() {
+        let mut doc = Document::new(fixture::font());
+        doc.execute(&user(0), &width(0, 1.0)).unwrap();
+        let txn = doc.begin("t").unwrap();
+        doc.rollback(txn).unwrap();
+        doc.execute(&user(100), &width(0, 2.0)).unwrap();
+        assert_eq!(doc.history().undo_len(), 2);
+    }
+
+    /// A glyph ID handed out once is not handed out again after an undo or a rollback.
+    #[test]
+    fn undo_never_lets_a_glyph_id_be_reused() {
+        let mut doc = Document::new(fixture::font());
+        let created = |outcome: Outcome| match outcome.events.as_slice() {
+            [Event::GlyphCreated { id, .. }] => *id,
+            other => panic!("{other:?}"),
+        };
+        let b = created(doc.execute(&user(0), &create("B")).unwrap());
+        doc.execute(&user(1), &UNDO).unwrap();
+        let c = created(doc.execute(&user(2), &create("C")).unwrap());
+        assert_ne!(b, c);
+        assert!(doc.state().font.glyph(b).is_none());
+
+        let txn = doc.begin("t").unwrap();
+        let mut ctx = user(3);
+        ctx.txn = Some(txn);
+        let d = created(doc.execute(&ctx, &create("D")).unwrap());
+        doc.rollback(txn).unwrap();
+        let e = created(doc.execute(&user(4), &create("E")).unwrap());
+        assert_ne!(d, e);
+
+        // Redo still finds the glyph at the ID it had.
+        doc.execute(&user(5), &UNDO).unwrap();
+        doc.execute(&user(6), &REDO).unwrap();
+        assert_eq!(doc.state().font.glyphs().id_of("E"), Some(e));
+    }
 }
 
 /// Property tests of the history over generated command sequences (Step 4 *Tasks*).
@@ -455,6 +506,7 @@ mod properties {
     use tf_commands::command::{DocRedo, DocUndo, GlyphCreate};
 
     use super::*;
+    use crate::history::COALESCE_WINDOW_MS;
     use crate::reduce::testing::{CommandGen, command};
 
     /// One step of a generated session.
@@ -489,24 +541,51 @@ mod properties {
         prop::collection::vec(op(), 0..40)
     }
 
+    /// Commands only: single commands and drags (one command repeated by the user with new
+    /// values, mostly inside the coalescing window), so that runs join and split.
     fn runs() -> impl Strategy<Value = Vec<Op>> {
-        prop::collection::vec(
-            (command(), any::<bool>(), 0u16..1000).prop_map(|(command, user, dt)| Op::Run {
-                command,
-                user,
-                dt,
-            }),
-            0..20,
+        let single = (command(), any::<bool>(), 0u16..1000)
+            .prop_map(|(command, user, dt)| vec![Op::Run { command, user, dt }]);
+        let drag = (
+            command(),
+            prop::collection::vec((any::<i16>(), 0u16..700), 2..6),
         )
+            .prop_map(|(command, moves)| {
+                moves
+                    .into_iter()
+                    .map(|(value, dt)| {
+                        let mut command = command.clone();
+                        command.pick.value = value;
+                        Op::Run {
+                            command,
+                            user: true,
+                            dt,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            });
+        prop::collection::vec(prop_oneof![single, drag], 0..8)
+            .prop_map(|bursts| bursts.into_iter().flatten().collect())
     }
 
     /// Drives a document with ops, ignoring their errors, and checks that the revision
-    /// never goes back and that failures change nothing.
+    /// moves by one per change and that failures and no-ops change neither the state nor
+    /// the history.
     struct Session {
         doc: Document,
         at_ms: u64,
+        /// State changes of any op (commands, undo, redo, rollback).
         changes: usize,
+        /// Commands that changed the state.
+        commits: usize,
+        /// Commands outside a transaction that joined the previous undo step.
+        joins: usize,
+        /// Transaction commits that recorded a step.
+        txn_steps: usize,
     }
+
+    /// What the history looks like from outside.
+    type HistoryView = (usize, usize, Option<String>, Option<String>, Option<TxnId>);
 
     impl Session {
         fn new(font: Font, cap: usize) -> Self {
@@ -514,7 +593,21 @@ mod properties {
                 doc: Document::with_history_cap(font, cap),
                 at_ms: 0,
                 changes: 0,
+                commits: 0,
+                joins: 0,
+                txn_steps: 0,
             }
+        }
+
+        fn view(&self) -> HistoryView {
+            let h = self.doc.history();
+            (
+                h.undo_len(),
+                h.redo_len(),
+                h.undo_label().map(str::to_owned),
+                h.redo_label().map(str::to_owned),
+                self.doc.transaction(),
+            )
         }
 
         fn ctx(&self, origin: Origin) -> ExecCtx {
@@ -526,6 +619,7 @@ mod properties {
 
         fn run(&mut self, op: &Op) -> Result<(), TestCaseError> {
             let before = Arc::clone(self.doc.state());
+            let view = self.view();
             let result = match op {
                 Op::Run { command, user, dt } => {
                     self.at_ms += u64::from(*dt);
@@ -544,18 +638,37 @@ mod properties {
                 Op::Commit => self.close(Document::commit),
                 Op::Rollback => self.close(Document::rollback),
             };
-            let after = self.doc.state();
-            match result {
+            let after = Arc::clone(self.doc.state());
+            let changed = after.revision != before.revision;
+            match &result {
                 Ok(outcome) => {
                     prop_assert_eq!(outcome.revision, after.revision);
-                    if outcome.revision != before.revision {
+                    if changed {
                         prop_assert_eq!(outcome.revision, before.revision.next());
                         self.changes += 1;
                     } else {
-                        prop_assert!(Arc::ptr_eq(&before, after));
+                        prop_assert!(Arc::ptr_eq(&before, &after));
+                        if !matches!(op, Op::Begin | Op::Commit | Op::Rollback) {
+                            prop_assert_eq!(&self.view(), &view);
+                        }
                     }
                 }
-                Err(_) => prop_assert!(Arc::ptr_eq(&before, after)),
+                Err(_) => {
+                    prop_assert!(Arc::ptr_eq(&before, &after));
+                    prop_assert_eq!(&self.view(), &view);
+                }
+            }
+            if result.is_ok() {
+                match op {
+                    Op::Run { .. } if changed => {
+                        self.commits += 1;
+                        if view.4.is_none() && self.view().0 == view.0 {
+                            self.joins += 1;
+                        }
+                    }
+                    Op::Commit if self.view().0 > view.0 => self.txn_steps += 1,
+                    _ => {}
+                }
             }
             Ok(())
         }
@@ -613,25 +726,34 @@ mod properties {
         use proptest::test_runner::TestRunner;
 
         let mut runner = TestRunner::deterministic();
-        let (mut commands, mut changes, mut undone) = (0, 0, 0);
+        let (mut commands, mut commits, mut joins, mut txn_steps, mut undone) = (0, 0, 0, 0, 0);
         for _ in 0..100 {
-            let (font, ops) = (tf_model::testing::font(), ops())
+            let (font, ops, runs) = (tf_model::testing::font(), ops(), runs())
                 .new_tree(&mut runner)
                 .unwrap()
                 .current();
             let mut s = Session::new(font, ROOMY);
             s.run_all(&ops).unwrap();
+            s.settle();
+            s.run_all(&runs).unwrap();
+            commands += runs.len();
             commands += ops.iter().filter(|op| matches!(op, Op::Run { .. })).count();
-            changes += s.changes;
+            commits += s.commits;
+            joins += s.joins;
+            txn_steps += s.txn_steps;
             s.settle();
             while s.undo().is_ok() {
                 undone += 1;
             }
         }
-        // Changes include undo, redo and rollback, so compare with the command count loosely.
         assert!(
-            changes * 2 > commands,
-            "{changes} changes for {commands} commands"
+            commits * 2 > commands,
+            "{commits} of {commands} commands changed the font"
+        );
+        assert!(joins >= 20, "only {joins} coalesced commits");
+        assert!(
+            txn_steps >= 10,
+            "only {txn_steps} transactions recorded a step"
         );
         assert!(undone > 100, "only {undone} steps to undo");
     }
@@ -713,11 +835,16 @@ mod properties {
                 }
                 let key = (*user).then(|| CoalesceKey::of(&built)).flatten();
                 let at = s.at_ms;
-                let joins = matches!((run, key), (Some((k0, t0)), Some(k)) if k == k0 && at - t0 <= 500);
+                let joins = matches!(
+                    (run, key),
+                    (Some((k0, t0)), Some(k)) if k == k0
+                        && at.checked_sub(t0).is_some_and(|gap| gap <= COALESCE_WINDOW_MS)
+                );
                 if !joins {
                     expected += 1;
                 }
                 run = key.map(|k| (k, at));
+                prop_assert_eq!(s.doc.history().undo_len(), expected);
             }
             prop_assert_eq!(s.doc.history().undo_len(), expected);
         }

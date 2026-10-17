@@ -21,8 +21,16 @@ not_implemented! {
     set_codepoints(GlyphSetCodepoints) = "glyph.setCodepoints";
 }
 
+/// The commands of this family that have a reducer (checked by the dispatch test).
+#[cfg(test)]
+pub(super) const IMPLEMENTED: &[tf_commands::CommandId] = &[
+    tf_commands::CommandId::GlyphCreate,
+    tf_commands::CommandId::GlyphDelete,
+    tf_commands::CommandId::GlyphSetWidth,
+];
+
 /// `glyph.create`: a glyph with the name, code points and width in the default layer of
-/// every source.
+/// every source (for the default source, the font's default layer).
 pub(super) fn create(state: &DocState, p: &GlyphCreate) -> Result<Reduced, CommandError> {
     let name = map::name(&p.name)?;
     let width = map::units("width", p.width)?;
@@ -46,13 +54,21 @@ pub(super) fn create(state: &DocState, p: &GlyphCreate) -> Result<Reduced, Comma
         ..GlyphLayer::default()
     });
     let mut glyph = Glyph::new(name.clone());
-    for (_, source) in font.sources() {
-        // A source always has a layer; its first is its default.
-        if let Some(default) = source.layers.first() {
-            glyph.layers.insert(default.id, Arc::clone(&layer));
+    for (id, source) in font.sources() {
+        // A source always has a layer; its first is its default. The font's default layer
+        // (where code points are read) may be another layer of the default source.
+        let default = if id == font.default_source() {
+            Some(font.default_layer())
+        } else {
+            source.layers.first().map(|l| l.id)
+        };
+        if let Some(default) = default {
+            glyph.layers.insert(default, Arc::clone(&layer));
         }
     }
     let mut next = font.clone();
+    next.reserve_glyph_slots(state.glyph_slots)
+        .map_err(map::model_error)?;
     let id = next
         .insert_glyph(Arc::new(glyph))
         .map_err(map::model_error)?;
@@ -70,6 +86,9 @@ fn codepoint_owner(font: &Font, c: char) -> Option<&Name> {
         .find(|(_, glyph)| glyph.layers.values().any(|l| l.codepoints.contains(&c)))
         .map(|(_, glyph)| &glyph.name)
 }
+
+/// The most component uses an `E_GLYPH_IN_USE` message names.
+const MAX_LISTED_USES: usize = 10;
 
 /// `glyph.delete`: deletes glyphs; refuses one that a glyph outside the set uses as a
 /// component (`E_GLYPH_IN_USE`, naming every such use).
@@ -96,10 +115,14 @@ pub(super) fn delete(state: &DocState, p: &GlyphDelete) -> Result<Reduced, Comma
         })
         .collect();
     if !uses.is_empty() {
-        let list: Vec<String> = uses
+        let mut list: Vec<String> = uses
             .iter()
+            .take(MAX_LISTED_USES)
             .map(|(user, base)| format!("{user} uses {base}"))
             .collect();
+        if uses.len() > MAX_LISTED_USES {
+            list.push(format!("and {} more", uses.len() - MAX_LISTED_USES));
+        }
         return Err(CommandError::new(
             ErrorCode::GlyphInUse,
             format!("glyphs used as components: {}", list.join(", ")),
@@ -108,8 +131,10 @@ pub(super) fn delete(state: &DocState, p: &GlyphDelete) -> Result<Reduced, Comma
     if ids.is_empty() {
         return Ok(Reduced::unchanged(state));
     }
+    // `next` is a copy (a few pointers), dropped on error: the removals land together.
     let mut next = font.clone();
-    next.try_update(|f| ids.iter().try_for_each(|&id| f.remove_glyph(id).map(drop)))
+    ids.iter()
+        .try_for_each(|&id| next.remove_glyph(id).map(drop))
         .map_err(map::model_error)?;
     Ok(Reduced::new(
         state,
@@ -159,22 +184,12 @@ pub(crate) mod testing {
     use proptest::strategy::BoxedStrategy;
     use tf_commands::Command;
     use tf_commands::command::{self as dto, GlyphCreate, GlyphDelete, GlyphSetWidth};
-    use tf_model::{Font, GlyphId};
+    use tf_model::Font;
 
-    use crate::reduce::testing::{CommandGen, Pick, family};
+    use crate::reduce::testing::{CommandGen, Pick, family, live_glyph, live_layer};
 
     pub fn commands() -> BoxedStrategy<CommandGen> {
-        family(&[create, delete, set_width])
-    }
-
-    /// A live glyph picked by `index`, or glyph 0 in an empty font.
-    fn live(font: &Font, index: &proptest::sample::Index) -> GlyphId {
-        let ids: Vec<GlyphId> = font.glyphs().iter().map(|(id, _)| id).collect();
-        if ids.is_empty() {
-            GlyphId(0)
-        } else {
-            *index.get(&ids)
-        }
+        family(&[create, delete, set_width, set_first_width])
     }
 
     /// A fresh name (longer than any generated one); a private-use code point every third
@@ -195,24 +210,33 @@ pub(crate) mod testing {
     /// Deletes one live glyph; fails when another glyph uses it as a component.
     fn delete(font: &Font, pick: &Pick) -> Command {
         Command::GlyphDelete(GlyphDelete {
-            ids: vec![dto::GlyphId(live(font, &pick.a).0)],
+            ids: vec![dto::GlyphId(live_glyph(font, &pick.a).0)],
         })
     }
 
     /// Sets the width of one layer of a live glyph.
     fn set_width(font: &Font, pick: &Pick) -> Command {
-        let id = live(font, &pick.a);
-        let layers: Vec<u32> = font
-            .glyph(id)
-            .map(|g| g.layers.keys().map(|l| l.0).collect())
-            .unwrap_or_default();
-        let layer = if layers.is_empty() {
-            0
-        } else {
-            *pick.b.get(&layers)
-        };
+        let id = live_glyph(font, &pick.a);
         Command::GlyphSetWidth(GlyphSetWidth {
             id: dto::GlyphId(id.0),
+            layer: dto::LayerId(live_layer(font, id, &pick.b).0),
+            width: f64::from(pick.value),
+        })
+    }
+
+    /// Sets the width of the first layer of the first live glyph: repeated, it exercises
+    /// coalescing (same key).
+    fn set_first_width(font: &Font, pick: &Pick) -> Command {
+        let (id, glyph) = font
+            .glyphs()
+            .iter()
+            .next()
+            .map_or((0, None), |(id, g)| (id.0, Some(g)));
+        let layer = glyph
+            .and_then(|g| g.layers.keys().next())
+            .map_or(0, |l| l.0);
+        Command::GlyphSetWidth(GlyphSetWidth {
+            id: dto::GlyphId(id),
             layer: dto::LayerId(layer),
             width: f64::from(pick.value),
         })
@@ -232,10 +256,7 @@ mod tests {
     use crate::reduce::{Event, Touched};
 
     fn state() -> DocState {
-        DocState {
-            font: fixture::font(),
-            revision: Revision(7),
-        }
+        DocState::new(fixture::font(), Revision(7))
     }
 
     fn create_cmd(glyph: &str, codepoints: &[u32], width: f64) -> GlyphCreate {
@@ -248,6 +269,52 @@ mod tests {
 
     fn code(result: Result<Reduced, CommandError>) -> ErrorCode {
         result.unwrap_err().code
+    }
+
+    #[test]
+    fn create_uses_the_font_default_layer_in_the_default_source() {
+        let mut font = fixture::font();
+        font.set_default_layer(Lid(1)).unwrap();
+        let state = DocState::new(font, Revision(0));
+        let reduced = create(&state, &create_cmd("B", &[0x42], 0.0)).unwrap();
+        let font = &reduced.state.font;
+        let id = font.glyphs().id_of("B").unwrap();
+        let layers: Vec<Lid> = font.glyph(id).unwrap().layers.keys().copied().collect();
+        assert_eq!(layers, [Lid(1), Lid(2)]);
+        assert_eq!(font.codepoints(id), ['B']);
+    }
+
+    #[test]
+    fn create_skips_ids_that_an_earlier_state_handed_out() {
+        let mut state = state();
+        state.glyph_slots = 9;
+        let reduced = create(&state, &create_cmd("B", &[], 0.0)).unwrap();
+        assert_eq!(reduced.state.font.glyphs().id_of("B"), Some(Gid(9)));
+        assert_eq!(reduced.state.glyph_slots, 10);
+    }
+
+    #[test]
+    fn delete_names_at_most_ten_uses() {
+        let mut font = fixture::font();
+        let template = (**font.glyph(Gid(2)).unwrap()).clone();
+        for i in 0..12 {
+            let mut user = template.clone();
+            user.name = name(&format!("user{i:02}"));
+            for layer in user.layers.values_mut() {
+                std::sync::Arc::make_mut(layer).codepoints.clear();
+            }
+            font.insert_glyph(std::sync::Arc::new(user)).unwrap();
+        }
+        let state = DocState::new(font, Revision(0));
+        let p = GlyphDelete {
+            ids: vec![GlyphId(1)],
+        };
+        let error = delete(&state, &p).unwrap_err();
+        assert!(
+            error.message.ends_with("user08 uses acute, and 3 more"),
+            "{}",
+            error.message
+        );
     }
 
     #[test]
@@ -302,7 +369,7 @@ mod tests {
             code(create(&state, &create_cmd("B", &[0x42, 0x42], 0.0))),
             ErrorCode::InvalidField
         );
-        // `A` has U+0041 in layer 0; `Aacute` has U+00C1 only in its layers.
+        // `A` has U+0041; `Aacute` has U+00C1 (in layers 0 and 2).
         let in_use = create(&state, &create_cmd("B", &[0x42, 0xC1], 0.0)).unwrap_err();
         assert_eq!(in_use.code, ErrorCode::CodepointInUse);
         assert!(in_use.message.contains("U+00C1") && in_use.message.contains("Aacute"));

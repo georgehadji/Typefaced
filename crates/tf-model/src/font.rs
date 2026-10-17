@@ -201,6 +201,11 @@ impl Font {
         Ok(value)
     }
 
+    /// Pads the glyph table with tombstones to `slots` slots ([`GlyphTable::reserve`]).
+    pub fn reserve_glyph_slots(&mut self, slots: usize) -> Result<(), ModelError> {
+        self.glyphs.reserve(slots)
+    }
+
     /// Deletes a glyph, leaving a tombstone, and returns it.
     pub fn remove_glyph(&mut self, id: GlyphId) -> Result<Arc<Glyph>, ModelError> {
         self.glyphs.remove(id)
@@ -660,6 +665,8 @@ mod tests {
         font.insert_glyph(glyph("A", &[(0, square())])).unwrap();
         let b = font.insert_glyph(glyph("B", &[(0, square())])).unwrap();
         font.remove_glyph(GlyphId(0)).unwrap();
+        font.reserve_glyph_slots(4).unwrap();
+        assert_eq!(font.glyphs().slot_count(), 4);
         let compact = font.compact();
         assert_eq!(compact.glyphs().id_of("B"), Some(GlyphId(0)));
         assert_eq!(font.glyphs().id_of("B"), Some(b));

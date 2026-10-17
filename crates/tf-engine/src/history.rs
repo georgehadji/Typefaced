@@ -1,5 +1,6 @@
 //! Undo and redo stacks of `Arc<DocState>` roots with labels (ADR-0003: snapshot undo on
-//! persistent state). A step stores the state *before* it, so undo is a pointer swap.
+//! persistent state). A step stores the state *before* it, so undo shares that state's font
+//! (a few pointers) instead of reverting edits.
 //!
 //! - A new commit clears redo.
 //! - The undo stack holds at most `cap` steps ([`DEFAULT_CAP`]); the oldest goes first.
@@ -60,7 +61,7 @@ pub(crate) struct Step {
 }
 
 /// The undo and redo stacks of one document.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct History {
     undo: VecDeque<Step>,
     redo: Vec<Step>,
@@ -139,6 +140,11 @@ impl History {
         }
     }
 
+    /// Ends the coalescing run: the next commit starts a new step.
+    pub(crate) fn end_run(&mut self) {
+        self.run = None;
+    }
+
     /// Pops the last undo step and moves `current` onto the redo stack in its place.
     pub(crate) fn undo(&mut self, current: Arc<DocState>) -> Option<Step> {
         let step = self.undo.pop_back()?;
@@ -174,10 +180,7 @@ mod tests {
     use crate::reduce::fixture;
 
     fn state(revision: u32) -> Arc<DocState> {
-        Arc::new(DocState {
-            font: fixture::font(),
-            revision: Revision(revision),
-        })
+        Arc::new(DocState::new(fixture::font(), Revision(revision)))
     }
 
     fn touched(glyph: u32) -> BTreeSet<Touched> {

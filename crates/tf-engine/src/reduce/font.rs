@@ -7,6 +7,10 @@ use tf_commands::command::{
     KerningSetPairs,
 };
 
+/// The commands of this family that have a reducer (checked by the dispatch test).
+#[cfg(test)]
+pub(super) const IMPLEMENTED: &[tf_commands::CommandId] = &[];
+
 not_implemented! {
     set_info(FontSetInfo) = "font.setInfo";
     set_vertical_metrics(FontSetVerticalMetrics) = "font.setVerticalMetrics";

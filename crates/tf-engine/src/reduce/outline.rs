@@ -7,6 +7,10 @@ use tf_commands::command::{
     GlyphTransform,
 };
 
+/// The commands of this family that have a reducer (checked by the dispatch test).
+#[cfg(test)]
+pub(super) const IMPLEMENTED: &[tf_commands::CommandId] = &[];
+
 not_implemented! {
     set_outline(GlyphSetOutline) = "glyph.setOutline";
     move_points(GlyphMovePoints) = "glyph.movePoints";

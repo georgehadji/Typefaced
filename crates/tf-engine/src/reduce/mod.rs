@@ -78,6 +78,7 @@ impl Reduced {
     pub(crate) fn new(prev: &DocState, font: Font, touched: BTreeSet<Touched>) -> Self {
         Self {
             state: DocState {
+                glyph_slots: prev.glyph_slots.max(font.glyphs().slot_count()),
                 font,
                 revision: prev.revision.next(),
             },
@@ -151,7 +152,7 @@ pub(crate) mod testing {
     use proptest::prelude::*;
     use proptest::sample::Index;
     use tf_commands::Command;
-    use tf_model::Font;
+    use tf_model::{Font, GlyphId, LayerId};
 
     /// Random picks that a family's `build` resolves against the font at run time, so the
     /// generated commands mostly target live glyphs and layers.
@@ -172,6 +173,29 @@ pub(crate) mod testing {
     impl CommandGen {
         pub fn build(&self, font: &Font) -> Command {
             (self.build)(font, &self.pick)
+        }
+    }
+
+    /// A live glyph picked by `index`, or glyph 0 in an empty font.
+    pub fn live_glyph(font: &Font, index: &Index) -> GlyphId {
+        let ids: Vec<GlyphId> = font.glyphs().iter().map(|(id, _)| id).collect();
+        if ids.is_empty() {
+            GlyphId(0)
+        } else {
+            *index.get(&ids)
+        }
+    }
+
+    /// One of the glyph's layers picked by `index`, or layer 0 when it has none.
+    pub fn live_layer(font: &Font, glyph: GlyphId, index: &Index) -> LayerId {
+        let layers: Vec<LayerId> = font
+            .glyph(glyph)
+            .map(|g| g.layers.keys().copied().collect())
+            .unwrap_or_default();
+        if layers.is_empty() {
+            LayerId(0)
+        } else {
+            *index.get(&layers)
         }
     }
 
@@ -285,13 +309,15 @@ mod tests {
     /// exactly the commands of this step and the history commands are implemented.
     #[test]
     fn every_catalog_command_is_dispatched() {
-        let implemented = [
-            CommandId::DocUndo,
-            CommandId::DocRedo,
-            CommandId::GlyphCreate,
-            CommandId::GlyphDelete,
-            CommandId::GlyphSetWidth,
-        ];
+        // Each family file lists its own implemented commands.
+        let implemented: Vec<CommandId> = [
+            &[CommandId::DocUndo, CommandId::DocRedo][..],
+            structure::IMPLEMENTED,
+            font::IMPLEMENTED,
+            outline::IMPLEMENTED,
+            parts::IMPLEMENTED,
+        ]
+        .concat();
         for &id in CommandId::ALL {
             let example = tf_commands::registry::command(id).example;
             let command: Command = serde_json::from_str(example).unwrap();
@@ -317,10 +343,7 @@ mod tests {
 
     #[test]
     fn history_commands_have_no_reducer() {
-        let state = DocState {
-            font: fixture::font(),
-            revision: crate::Revision(0),
-        };
+        let state = DocState::new(fixture::font(), crate::Revision(0));
         let undo = Command::DocUndo(tf_commands::command::DocUndo {});
         let error = reduce(&state, &undo).unwrap_err();
         assert_eq!(error.code, ErrorCode::NotImplemented);

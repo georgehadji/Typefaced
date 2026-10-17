@@ -6,7 +6,7 @@ Up: [tf-model/CONTEXT.md](../CONTEXT.md).
 |---|---|
 | `lib.rs` | Crate docs with the norad 0.18.4 inventory table (typed, opaque, G10 shadow or no home for every field); module list and re-exports |
 | `font.rs` | `Font`, the aggregate root: sources, glyph table, default layer, optional designspace, `ProjectFiles`. Every change method checks the invariants first and leaves the font unchanged on error; `try_update` runs several changes as one (on a copy); `compact` (load only) and `warnings` (dangling components) |
-| `table.rs` | `GlyphTable`: `imbl::Vector<Option<Arc<Glyph>>>` indexed by `GlyphId` with tombstones, plus an `imbl::OrdMap` name index; insert, replace (rename), remove, `compact`. Model-based property test |
+| `table.rs` | `GlyphTable`: `imbl::Vector<Option<Arc<Glyph>>>` indexed by `GlyphId` with tombstones, plus an `imbl::OrdMap` name index; insert, replace (rename), remove, `reserve` (tombstone padding, so the engine never reuses an ID after undo), `compact`. Model-based property test |
 | `glyph.rs` | `Glyph` (name + one `GlyphLayer` per `LayerId`) and the value objects: `Point`, `PointKind`, `Contour`, `Component`, `Transform`, `Anchor`, `Guideline`, `Line`, `Image`, `Color` |
 | `source.rs` | `Source`: one UFO's font-level data (font info, lib, groups, kerning, features, layers, `data/` and `images/` stores); `FontInfo` with typed accessors and its `keys`; `SourceLayer`; the `Kerning` and `Groups` maps |
 | `designspace.rs` | `Designspace` and its types, mirroring norad's designspace document; `Master` points a `<source>` at a model `Source` and optional layer |

@@ -1,5 +1,6 @@
 //! DTO ↔ model conversions (plan deviation 4: commands carry wire DTOs, the engine maps
 //! them to `tf-model` types) and the mapping of model errors to stable error codes.
+//! Conversions that only one command family needs live in that family's reducer file.
 
 use tf_commands::command as dto;
 use tf_commands::{CommandError, ErrorCode};

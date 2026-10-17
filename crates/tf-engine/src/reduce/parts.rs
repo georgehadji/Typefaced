@@ -7,6 +7,10 @@ use tf_commands::command::{
     GlyphRemoveComponent,
 };
 
+/// The commands of this family that have a reducer (checked by the dispatch test).
+#[cfg(test)]
+pub(super) const IMPLEMENTED: &[tf_commands::CommandId] = &[];
+
 not_implemented! {
     add_component(GlyphAddComponent) = "glyph.addComponent";
     remove_component(GlyphRemoveComponent) = "glyph.removeComponent";
