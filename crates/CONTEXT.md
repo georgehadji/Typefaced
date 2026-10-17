@@ -13,6 +13,7 @@ pure: no I/O, no async runtime, no Tauri. Dependencies point inward only
 | `tf-commands/` | application | [CONTEXT.md](tf-commands/CONTEXT.md): typed command catalog shared by UI, AI, MCP and CLI |
 | `tf-compile/` | adapter | [CONTEXT.md](tf-compile/CONTEXT.md): compiles UFO and designspace sources to TTF through fontc, in-process, and TTF to OTF |
 | `tf-model/` | domain | [CONTEXT.md](tf-model/CONTEXT.md): domain model of a font project on persistent collections (glyph table, sources, designspace) |
+| `tf-engine/` | application | [CONTEXT.md](tf-engine/CONTEXT.md): document engine, pure reducers, undo/redo history and transactions |
 | `tf-geometry/` | domain | [CONTEXT.md](tf-geometry/CONTEXT.md): geometry kernel on packed outlines (hit testing, point edits) |
 | `tf-wasm/` | driver | [CONTEXT.md](tf-wasm/CONTEXT.md): WebAssembly facade over `tf-geometry` for the UI |
 

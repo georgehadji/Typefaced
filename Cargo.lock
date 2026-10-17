@@ -4499,6 +4499,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tf-engine"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde_json",
+ "tf-commands",
+ "tf-model",
+]
+
+[[package]]
 name = "tf-geometry"
 version = "0.1.0"
 dependencies = [

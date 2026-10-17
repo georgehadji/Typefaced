@@ -91,6 +91,19 @@ impl GlyphTable {
         Ok(old)
     }
 
+    /// Appends tombstones until the table has `slots` slots, so the next new glyph gets an
+    /// ID of at least `slots`. The engine calls it after an undo, so an ID handed out once is
+    /// not handed out again.
+    pub fn reserve(&mut self, slots: usize) -> Result<(), ModelError> {
+        if u32::try_from(slots).is_err() {
+            return Err(ModelError::TableFull);
+        }
+        while self.slots.len() < slots {
+            self.slots.push_back(None);
+        }
+        Ok(())
+    }
+
     /// The same glyphs, in the same order, without tombstones. **Load only:** it changes IDs.
     #[must_use]
     pub fn compact(&self) -> Self {
@@ -167,6 +180,20 @@ mod tests {
         // The snapshot taken before is untouched.
         assert_eq!(snapshot.len(), 3);
         assert_eq!(snapshot.id_of("B"), Some(GlyphId(1)));
+    }
+
+    #[test]
+    fn reserve_pads_with_tombstones() {
+        let mut table = GlyphTable::new();
+        table.insert(glyph("A")).unwrap();
+        table.reserve(3).unwrap();
+        table.reserve(1).unwrap(); // never shrinks
+        assert_eq!((table.len(), table.slot_count()), (1, 3));
+        assert_eq!(table.insert(glyph("B")), Ok(GlyphId(3)));
+        assert_eq!(
+            table.reserve(u32::MAX as usize + 1),
+            Err(ModelError::TableFull)
+        );
     }
 
     #[test]

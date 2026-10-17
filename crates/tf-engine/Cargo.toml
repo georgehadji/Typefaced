@@ -1,0 +1,24 @@
+[package]
+name = "tf-engine"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Document engine: pure reducers, undo/redo history and transactions (implementation plan §5.12, ADR-0003)"
+
+[package.metadata.typefaced]
+layer = "application"
+
+[dependencies]
+tf-commands = { path = "../tf-commands" }
+tf-model = { path = "../tf-model" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
+# The model's proptest generators (`tf_model::testing`).
+tf-model = { path = "../tf-model", features = ["testing"] }
+
+[lints]
+workspace = true
