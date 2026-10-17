@@ -226,7 +226,8 @@ pub(crate) mod testing {
     }
 }
 
-/// A small hand-made font for unit tests.
+/// A small hand-made font for unit tests. Families that need more (kerning, contours,
+/// anchors) build on it in their own test modules instead of growing it.
 #[cfg(test)]
 pub(crate) mod fixture {
     use std::sync::Arc;
