@@ -39,6 +39,7 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | Tauri command registration | `apps/desktop/src-tauri/src/lib.rs` |
 | AI egress: API key storage, request policy, streaming proxy | `crates/tf-ai-host/src/` → `apps/desktop/src-tauri/src/ai.rs` |
 | AI client in the webview (SDK, custom fetch, tools) | `packages/ai/src/` |
+| Running a command on a document; undo, redo, transactions | `crates/tf-engine/src/document.rs` → `reduce/mod.rs` (dispatch) → `reduce/<family>.rs` |
 | Domain model of a font project; where each norad field lives | `crates/tf-model/src/lib.rs` |
 | Boolean operations (remove overlap, union, intersection, difference) | `crates/tf-geometry/src/boolean.rs` (port) → `crates/tf-boolean/src/lib.rs` (linesweeper) |
 | Geometry kernel (hit testing, point edits) | `crates/tf-geometry/src/lib.rs` → `crates/tf-wasm/src/lib.rs` → `packages/geometry-wasm` |
@@ -83,6 +84,9 @@ version over typed IPC, its shell exposes the AI egress commands, and `packages/
 | `crates/tf-compile/examples/` | [CONTEXT.md](crates/tf-compile/examples/CONTEXT.md) | Timing programs for Spikes 1 and 2 |
 | `crates/tf-compile/tests/` | [CONTEXT.md](crates/tf-compile/tests/CONTEXT.md) | Fixture, corpus, designspace 5 and OTF tests |
 | `crates/tf-compile/tests/data/` | [CONTEXT.md](crates/tf-compile/tests/data/CONTEXT.md) | Input files for the tests |
+| `crates/tf-engine/` | [CONTEXT.md](crates/tf-engine/CONTEXT.md) | Document engine crate (application layer): reducers, history, transactions |
+| `crates/tf-engine/src/` | [CONTEXT.md](crates/tf-engine/src/CONTEXT.md) | Document, history, execution context, DTO mapping |
+| `crates/tf-engine/src/reduce/` | [CONTEXT.md](crates/tf-engine/src/reduce/CONTEXT.md) | Reducer dispatch, one file per command family |
 | `crates/tf-geometry/` | [CONTEXT.md](crates/tf-geometry/CONTEXT.md) | Geometry kernel crate on packed outlines (domain layer) |
 | `crates/tf-geometry/benches/` | [CONTEXT.md](crates/tf-geometry/benches/CONTEXT.md) | Headless timing of the hit test |
 | `crates/tf-geometry/src/` | [CONTEXT.md](crates/tf-geometry/src/CONTEXT.md) | Hit testing and point edits |
@@ -306,6 +310,20 @@ generates this block; never edit it by hand. Not shown because git ignores them:
 │   │   │   ├── corpus.rs
 │   │   │   ├── designspace_v5.rs
 │   │   │   └── otf.rs
+│   │   └── Cargo.toml
+│   ├── tf-engine/
+│   │   ├── src/
+│   │   │   ├── reduce/
+│   │   │   │   ├── font.rs
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── outline.rs
+│   │   │   │   ├── parts.rs
+│   │   │   │   └── structure.rs
+│   │   │   ├── ctx.rs
+│   │   │   ├── document.rs
+│   │   │   ├── history.rs
+│   │   │   ├── lib.rs
+│   │   │   └── map.rs
 │   │   └── Cargo.toml
 │   ├── tf-geometry/
 │   │   ├── benches/hit_test.rs
