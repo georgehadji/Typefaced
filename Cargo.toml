@@ -16,6 +16,7 @@ imbl = "=7.0.2"
 indexmap = "2"
 insta = { version = "1.49.0", default-features = false }
 kurbo = "=0.13.1"
+linesweeper = "=0.4.0"
 # Each member chooses its own norad features (tf-compile: `kurbo`). tf-io (M1 Step 9) needs
 # `object-libs` to give an object a lib (`replace_lib`); it pulls `uuid` (`v4`), whose
 # licence `cargo deny check` must accept in that step.

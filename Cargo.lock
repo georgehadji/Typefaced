@@ -73,6 +73,9 @@ name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "ascii_plist_derive"
@@ -2249,6 +2252,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61ff90caf6077a803a240f62fdbe88645a890bbca49ef8174c3cb0404362171d"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "linesweeper"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c19728333c060c6569a53c9a0e56c4be0df52cb4e6e07a8fbe16084cecce769"
+dependencies = [
+ "arrayvec",
+ "kurbo",
+ "polycool",
+ "rustc-hash",
+ "smallvec",
 ]
 
 [[package]]
@@ -4431,6 +4447,17 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "windows-native-keyring-store",
+]
+
+[[package]]
+name = "tf-boolean"
+version = "0.1.0"
+dependencies = [
+ "kurbo",
+ "linesweeper",
+ "norad",
+ "proptest",
+ "tf-geometry",
 ]
 
 [[package]]

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0a599bac505c0fe0e782f02faf3914850840b4b110b29f70fea6a34dba3e2299 # shrinks to (a, a_in) = (BezPath([MoveTo((0.0, 19.0)), LineTo((226.0, 19.0)), LineTo((226.0, 327.0)), LineTo((0.0, 327.0)), ClosePath, MoveTo((1.0, 323.0)), LineTo((225.0, 323.0)), LineTo((225.0, 23.0)), LineTo((1.0, 23.0)), ClosePath, MoveTo((0.0, 473.0)), LineTo((10.0, 473.0)), LineTo((10.0, 835.0)), LineTo((0.0, 835.0)), ClosePath]), BezPath([MoveTo((0.0, 19.0)), LineTo((226.0, 19.0)), LineTo((226.0, 327.0)), LineTo((0.0, 327.0)), ClosePath, MoveTo((1.0, 323.0)), LineTo((225.0, 323.0)), LineTo((225.0, 23.0)), LineTo((1.0, 23.0)), ClosePath, MoveTo((0.0, 473.0)), LineTo((10.0, 473.0)), LineTo((10.0, 835.0)), LineTo((0.0, 835.0)), ClosePath])), (b, b_in) = (BezPath([MoveTo((20.0, 0.0)), LineTo((-9.999999999999996, 17.320508075688775)), LineTo((11.086507371429375, -16.646001150523876)), ClosePath]), BezPath([MoveTo((20.0, 0.0)), LineTo((-9.999999999999996, 17.320508075688775)), LineTo((11.086507371429375, -16.646001150523876)), ClosePath]))

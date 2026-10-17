@@ -11,6 +11,10 @@
 
 use kurbo::{CubicBez, Line, ParamCurveNearest, PathSeg, Point, QuadBez};
 
+pub mod boolean;
+
+pub use boolean::{BooleanEngine, BooleanError};
+
 /// Point flags: the low two bits are the point type, bit 2 marks a smooth point.
 pub mod flags {
     /// An off-curve control point.
